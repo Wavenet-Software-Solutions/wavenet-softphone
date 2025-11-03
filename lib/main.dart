@@ -16,37 +16,53 @@ import 'screens/recent_call_screen.dart';
 import 'screens/voicemail_screen.dart';
 
 
-Future<void> _requestNotificationPermissions() async {
+Future<void> _requestAppPermissions() async {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
   FlutterLocalNotificationsPlugin();
 
-  // 🔹 Android 13+ runtime permission
+  // 🔹 Request Notification permission (Android 13+ / iOS)
   if (await Permission.notification.isDenied ||
       await Permission.notification.isPermanentlyDenied) {
     final result = await Permission.notification.request();
     if (result.isDenied) {
       debugPrint("🚫 Notification permission denied on Android.");
-      return;
     }
   }
 
-  // 🔹 iOS permission prompt
   final iosPlugin = flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
       IOSFlutterLocalNotificationsPlugin>();
-  await iosPlugin?.requestPermissions(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
+  await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
 
-  debugPrint("✅ Notification permissions granted!");
+  // 🎙️ Request Microphone permission
+  if (await Permission.microphone.isDenied) {
+    showDialog(
+      context: navigatorKey.currentContext!,
+      builder: (_) => AlertDialog(
+        title: const Text("Microphone Permission"),
+        content: const Text(
+            "Please enable microphone access to make or receive calls 🥺"),
+        actions: [
+          TextButton(
+            onPressed: () => openAppSettings(),
+            child: const Text("Open Settings"),
+          ),
+        ],
+      ),
+    );
+  }
+else {
+    debugPrint("🎧 Microphone permission already granted!");
+  }
+
+  debugPrint("✅ All essential permissions handled!");
 }
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final sipProvider = SipProvider()..init();
-  await _requestNotificationPermissions();
+  await _requestAppPermissions();
   runApp(
     ChangeNotifierProvider.value(
       value: sipProvider,
