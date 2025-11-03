@@ -28,6 +28,8 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+
+	<!-- 🌀 Orientation Settings -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -41,9 +43,35 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- 💬 iOS Permission Usage Descriptions -->
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to your camera for video calls.</string>
+
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs access to your microphone for voice calls.</string>
+
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>This app uses Bluetooth for audio routing and call devices.</string>
+
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>This app uses Bluetooth to connect with your headset.</string>
+
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app needs local network access for VoIP and SIP communication.</string>
+
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_pjsip._udp</string>
+		<string>_pjsua._udp</string>
+	</array>
+
+	<key>NSUserNotificationUsageDescription</key>
+	<string>This app uses notifications to alert you about incoming calls and messages.</string>
 </dict>
 </plist>
