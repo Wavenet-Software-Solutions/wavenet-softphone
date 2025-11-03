@@ -17,46 +17,42 @@ import 'screens/voicemail_screen.dart';
 
 
 Future<void> _requestAppPermissions() async {
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-  FlutterLocalNotificationsPlugin();
+  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-  // 🔹 Request Notification permission (Android 13+ / iOS)
+  // ✅ Initialize before requesting permissions
+  const initializationSettings = InitializationSettings(
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    iOS: DarwinInitializationSettings(),
+  );
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+  // 🔹 Notifications (Android 13+ / iOS)
   if (await Permission.notification.isDenied ||
       await Permission.notification.isPermanentlyDenied) {
-    final result = await Permission.notification.request();
-    if (result.isDenied) {
-      debugPrint("🚫 Notification permission denied on Android.");
-    }
+    await Permission.notification.request();
   }
 
+  // 🍎 Request iOS notification permissions safely
   final iosPlugin = flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
       IOSFlutterLocalNotificationsPlugin>();
-  await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
-
-  // 🎙️ Request Microphone permission
-  if (await Permission.microphone.isDenied) {
-    showDialog(
-      context: navigatorKey.currentContext!,
-      builder: (_) => AlertDialog(
-        title: const Text("Microphone Permission"),
-        content: const Text(
-            "Please enable microphone access to make or receive calls 🥺"),
-        actions: [
-          TextButton(
-            onPressed: () => openAppSettings(),
-            child: const Text("Open Settings"),
-          ),
-        ],
-      ),
-    );
-  }
-else {
-    debugPrint("🎧 Microphone permission already granted!");
+  if (iosPlugin != null) {
+    await iosPlugin.requestPermissions(alert: true, badge: true, sound: true);
+  } else {
+    debugPrint("ℹ️ iOS notification plugin not available (maybe running on Android).");
   }
 
-  debugPrint("✅ All essential permissions handled!");
+  // 🎙️ Request microphone
+  final micStatus = await Permission.microphone.request();
+  if (micStatus.isGranted) {
+    debugPrint("🎤 Microphone permission granted!");
+  } else {
+    debugPrint("🚫 Microphone permission denied.");
+  }
+
+  debugPrint("✅ Permission check complete!");
 }
+
 
 
 void main() async {
