@@ -1,5 +1,5 @@
 // android/app/src/main/kotlin/<your pkg>/MainActivity.kt
-package com.example.wavenetsoftphone
+package com.wavenet.softphone
 
 import android.net.ConnectivityManager
 import android.net.Network

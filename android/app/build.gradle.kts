@@ -5,12 +5,12 @@ plugins {
 }
 
 android {
-    namespace = "com.example.wavenetsoftphone"
+    namespace = "com.wavenet.softphone"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "com.example.wavenetsoftphone"
+        applicationId = "com.wavenet.softphone"
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
