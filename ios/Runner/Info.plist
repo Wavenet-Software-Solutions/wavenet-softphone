@@ -24,6 +24,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
 
 	<!-- 🌀 Orientation Settings -->
 	<key>UISupportedInterfaceOrientations</key>
@@ -105,6 +109,16 @@
 	</array>
 	<key>UIRequiresPersistentWiFi</key>
 	<true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>This app uses the local network for communication and call connectivity.</string>
+
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_sip._udp</string>
+        <string>_sip._tcp</string>
+    </array>
+    <key>UIRequiresPersistentWiFi</key>
+    <true/>
 
 	<key>NSAppTransportSecurity</key>
 	<dict>
