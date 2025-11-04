@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
@@ -167,11 +168,13 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
       _helper.start(settings);
       status = 'registering';
+      if(Platform.isAndroid){
       await FlutterForegroundTask.startService(
         notificationTitle: 'Wavenet Softphone Running',
         notificationText: 'Listening for incoming calls…',
         callback: startCallback, // ✅ required now
       );
+      }
 
       debugPrint("🚀 Foreground service started to keep WebSocket alive.");
       error = null;

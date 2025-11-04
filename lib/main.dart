@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,32 +67,36 @@ void startCallback() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize service (safe on UI isolate)
-   FlutterForegroundTask.init(
-    androidNotificationOptions: AndroidNotificationOptions(
-      channelId: 'wavenet_foreground',
-      channelName: 'Wavenet Softphone Background',
-      channelDescription: 'Keeps SIP running for incoming calls',
-      channelImportance: NotificationChannelImportance.HIGH,
-      priority: NotificationPriority.HIGH,
-      iconData: const NotificationIconData(
-        resType: ResourceType.mipmap,
-        resPrefix: ResourcePrefix.ic,
-        name: 'launcher',
+
+  if (Platform.isAndroid) {
+     FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'wavenet_foreground',
+        channelName: 'Wavenet Softphone Background',
+        channelDescription: 'Keeps SIP running for incoming calls',
+        channelImportance: NotificationChannelImportance.HIGH,
+        priority: NotificationPriority.HIGH,
+        iconData: NotificationIconData(
+          resType: ResourceType.mipmap,
+          resPrefix: ResourcePrefix.ic,
+          name: 'launcher',
+        ),
       ),
-    ),
-    iosNotificationOptions: const IOSNotificationOptions(
-      showNotification: false,
-      playSound: false,
-    ),
-    foregroundTaskOptions: const ForegroundTaskOptions(
-      autoRunOnBoot: true,
-      allowWakeLock: true,
-      allowWifiLock: true,
-    ),
-  );
+       iosNotificationOptions: const IOSNotificationOptions( showNotification: false, playSound: false, ),
+      foregroundTaskOptions: const ForegroundTaskOptions(
+        autoRunOnBoot: true,
+        allowWakeLock: true,
+        allowWifiLock: true,
+      ),
+    );
+     FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
+
+  } else {
+    // Optional: log or handle iOS case gracefully
+    debugPrint('⚠️ FlutterForegroundTask is not supported on iOS.');
+  }
 
   // Register background handler
-  FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
   final sipProvider = SipProvider()..init();
   await _requestAppPermissions();
   runApp(
