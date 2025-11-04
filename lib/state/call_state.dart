@@ -30,6 +30,9 @@ class CallState extends ChangeNotifier {
       notifyListeners();
     }
   }
+  void clear() {
+    dialed = '';
+  }
 
 
   void clearDialed() { dialed = ''; notifyListeners(); }

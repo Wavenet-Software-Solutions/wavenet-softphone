@@ -1,19 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // for HapticFeedback
 
 class Numpad extends StatelessWidget {
   final void Function(String) onDigit;
   final VoidCallback onBackspace;
+  final bool showLetters; // optional toggle for letters under numbers 💫
 
   const Numpad({
     super.key,
     required this.onDigit,
     required this.onBackspace,
+    this.showLetters = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final buttonSize = size.width * 0.22; // scales for all screen sizes
+
+    final Map<String, String> labels = {
+      '1': '',
+      '2': 'ABC',
+      '3': 'DEF',
+      '4': 'GHI',
+      '5': 'JKL',
+      '6': 'MNO',
+      '7': 'PQRS',
+      '8': 'TUV',
+      '9': 'WXYZ',
+      '*': '',
+      '0': '+',
+      '#': '',
+    };
 
     final buttons = [
       ['1', '2', '3'],
@@ -25,44 +43,80 @@ class Numpad extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Build the keypad grid
+        // 🌸 Build the keypad grid
         for (var row in buttons)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: row.map((digit) {
-                return _buildButton(context, digit, buttonSize);
+                return _buildButton(
+                  context,
+                  digit,
+                  labels[digit] ?? '',
+                  buttonSize,
+                );
               }).toList(),
             ),
           ),
-        const SizedBox(height: 12),
-        // Backspace icon at bottom center
+
+        const SizedBox(height: 16),
+
 
       ],
     );
   }
 
-  Widget _buildButton(BuildContext context, String digit, double size) {
-    return InkWell(
-      onTap: () => onDigit(digit),
-      borderRadius: BorderRadius.circular(size / 2),
-      splashColor: Colors.tealAccent.withOpacity(0.2),
-      child: Container(
+  Widget _buildButton(
+      BuildContext context, String digit, String letters, double size) {
+    return GestureDetector(
+      onTapDown: (_) {
+        HapticFeedback.lightImpact();
+      },
+      onTap: () {
+        onDigit(digit);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
         width: size,
         height: size,
-        alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.white.withOpacity(0.07),
           border: Border.all(color: Colors.white30, width: 1),
         ),
-        child: Text(
-          digit,
-          style: const TextStyle(
-            fontSize: 26,
-            color: Colors.white,
-            fontWeight: FontWeight.w500,
+        alignment: Alignment.center,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          splashColor: Colors.tealAccent.withOpacity(0.2),
+          highlightColor: Colors.tealAccent.withOpacity(0.05),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onDigit(digit);
+          },
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                digit,
+                style: const TextStyle(
+                  fontSize: 28,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              if (showLetters && letters.isNotEmpty)
+                Text(
+                  letters,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 10,
+                    height: 0.8,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+            ],
           ),
         ),
       ),

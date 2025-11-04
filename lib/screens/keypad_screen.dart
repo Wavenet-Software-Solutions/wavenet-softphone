@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:sip_ua/sip_ua.dart';
 import '../widgets/numpad.dart';
@@ -149,43 +151,55 @@ class _KeypadScreenState extends State<KeypadScreen> {
                 const SizedBox(height: 24),
 
                 // 🔢 Number display
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: TextField(
-                    controller: _controller,
-                    readOnly: true,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      letterSpacing: 2,
-                      fontWeight: FontWeight.w500,
+              // 🔢 Number display
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // ✨ Borderless text field
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        readOnly: true,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 1.2,
+                          decoration: TextDecoration.none,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Enter number',
+                          hintStyle: TextStyle(color: Colors.white38, fontSize: 20),
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     ),
-                    decoration: InputDecoration(
-                      hintText: 'Enter Number',
-                      hintStyle: const TextStyle(color: Colors.white38),
 
-                      // prefixIcon: const Icon(Icons.phone_outlined,
-                      //     color: Colors.tealAccent, size: 22),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.backspace_outlined, color: Colors.white70),
-                        onPressed: () {
-                          setState(() {
-                            _callState.backspace();
-                            _controller.text = _callState.dialed;
-                          });
-                        },
-                      ),
-                      enabledBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white38, width: 1),
-                      ),
-                      focusedBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.tealAccent, width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    ),
-                  ),
+                    // 🔙 Backspace icon beside number field
+            AnimatedBackspaceButton(
+              onTap: () {
+                setState(() {
+                  _callState.backspace();
+                  _controller.text = _callState.dialed;
+                });
+              },
+              onHoldClear: () {
+                setState(() {
+                  _callState.clear();
+                  _controller.clear();
+                });
+              },
+              isActive: _controller.text.isNotEmpty,
+            ),
+                  ],
                 ),
+              ),
+
 
                 const SizedBox(height: 30),
 
@@ -251,6 +265,101 @@ class _KeypadScreenState extends State<KeypadScreen> {
                 ),
                 const SizedBox(height: 20),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+class AnimatedBackspaceButton extends StatefulWidget {
+  final VoidCallback onTap;
+  final VoidCallback onHoldClear;
+  final bool isActive;
+
+  const AnimatedBackspaceButton({
+    super.key,
+    required this.onTap,
+    required this.onHoldClear,
+    required this.isActive,
+  });
+
+  @override
+  State<AnimatedBackspaceButton> createState() => _AnimatedBackspaceButtonState();
+}
+
+class _AnimatedBackspaceButtonState extends State<AnimatedBackspaceButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scale;
+  late Animation<Color?> _color;
+  Timer? _holdTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+
+    _scale = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    );
+
+    _color = ColorTween(
+      begin: Colors.white54,
+      end: Colors.tealAccent,
+    ).animate(_controller);
+  }
+
+  void _startHold() {
+    _controller.forward();
+    _holdTimer = Timer(const Duration(seconds: 1), () {
+      HapticFeedback.mediumImpact();
+      widget.onHoldClear();
+    });
+  }
+
+  void _endHold() {
+    _controller.reverse();
+    _holdTimer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => _startHold(),
+      onTapUp: (_) => _endHold(),
+      onTapCancel: _endHold,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => Transform.scale(
+          scale: _scale.value,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _color.value!.withOpacity(0.4),
+                  blurRadius: 15,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.backspace_rounded,
+              color: widget.isActive ? _color.value : Colors.white24,
+              size: 30,
             ),
           ),
         ),

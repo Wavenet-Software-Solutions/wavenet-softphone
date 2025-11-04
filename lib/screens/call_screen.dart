@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:sip_ua/sip_ua.dart';
 import '../pjsip_bridge.dart';
+import 'package:flutter/services.dart';
 
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key});
@@ -14,11 +15,9 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> implements SipUaHelperListener {
   late SIPUAHelper _ua;
   Call? _call;
-  bool _muted = false;
   bool _speakerOn = false;
   bool _hasPopped = false;
   bool _showDialpad = false; // 🌸 toggle state
-  String _networkStatus = "Connecting…";
 
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
@@ -35,7 +34,6 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
     _call = SipProvider().activeCall;
     _initRenderers();
     _attachMedia();
-    _observeNetworkState();
   }
 
   Future<void> _initRenderers() async {
@@ -73,31 +71,6 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
     setState(() => _showDialpad = !_showDialpad);
   }
 
-  void _observeNetworkState() {
-    final pc = _call?.peerConnection;
-    if (pc == null) return;
-    pc.onIceConnectionState = (state) {
-      debugPrint('🌐 ICE State: $state');
-      setState(() {
-        switch (state) {
-          case RTCIceConnectionState.RTCIceConnectionStateConnected:
-            _networkStatus = "RTC Connected ✅";
-            break;
-          case RTCIceConnectionState.RTCIceConnectionStateCompleted:
-            _networkStatus = "Connection Stable 💚";
-            break;
-          case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
-            _networkStatus = "Disconnected ⚠️";
-            break;
-          case RTCIceConnectionState.RTCIceConnectionStateFailed:
-            _networkStatus = "Network Failed ❌";
-            break;
-          default:
-            _networkStatus = "Connecting…";
-        }
-      });
-    };
-  }
 
   void _startTimer() {
     if (_timer != null) return;
@@ -154,15 +127,12 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
     if (state.state == CallStateEnum.STREAM ||
         state.state == CallStateEnum.CONFIRMED) {
       await _attachMedia();
-      _observeNetworkState();
       if (!_stopwatch.isRunning) _startTimer();
-      setState(() => _networkStatus = "Call Active ✅");
     }
 
     if (state.state == CallStateEnum.ENDED ||
         state.state == CallStateEnum.FAILED) {
       _stopwatch.stop();
-      setState(() => _networkStatus = "Call Ended 💔");
       _localRenderer.srcObject = null;
       _remoteRenderer.srcObject = null;
       if (mounted && !_hasPopped) {
@@ -182,7 +152,7 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
       body: Stack(
         children: [
           _buildCallBody(context, target),
-          if (_showDialpad) _buildDialpadOverlay(context),
+          if (_showDialpad) _buildDialpadOverlay(),
         ],
       ),
     );
@@ -197,16 +167,30 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
             const SizedBox(height: 12),
             Text(target, style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
-            Text(_networkStatus, style: const TextStyle(color: Colors.grey)),
+            ValueListenableBuilder<String>(
+              valueListenable: SipProvider().callConnectionInfo,
+              builder: (context, status, _) {
+                return Text(
+                  status,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                );
+              },
+            ),
             const SizedBox(height: 8),
             ValueListenableBuilder<int>(
-              valueListenable: _elapsed,
-              builder: (_, s, __) {
-                final h = (s ~/ 3600).toString().padLeft(2, '0');
-                final m = ((s % 3600) ~/ 60).toString().padLeft(2, '0');
-                final sec = (s % 60).toString().padLeft(2, '0');
-                return Text('$h:$m:$sec',
-                    style: Theme.of(context).textTheme.titleLarge);
+              valueListenable: SipProvider().elapsedSeconds,
+              builder: (context, seconds, _) {
+                final mm = (seconds ~/ 60).toString().padLeft(2, '0');
+                final ss = (seconds % 60).toString().padLeft(2, '0');
+                return Text(
+                  "$mm:$ss",
+                  style: const TextStyle(
+                    color: Colors.tealAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    decoration: TextDecoration.none,
+                  ),
+                );
               },
             ),
             const SizedBox(height: 24),
@@ -253,41 +237,105 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
   }
 
   // 🌸 Dialpad overlay
-  Widget _buildDialpadOverlay(BuildContext context) {
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+  Widget _buildDialpadOverlay() {
+    const dialKeys = [
+      ['1', ''],
+      ['2', 'ABC'],
+      ['3', 'DEF'],
+      ['4', 'GHI'],
+      ['5', 'JKL'],
+      ['6', 'MNO'],
+      ['7', 'PQRS'],
+      ['8', 'TUV'],
+      ['9', 'WXYZ'],
+      ['*', ''],
+      ['0', '+'],
+      ['#', ''],
+    ];
 
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.9),
+        color: const Color(0xFF0f2027).withOpacity(0.95),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 60),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: keys.map((k) {
-                return ElevatedButton(
-                  onPressed: () => _sendDtmf(k),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey[850],
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(24),
-                  ),
-                  child: Text(
-                    k,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                );
-              }).toList(),
+            // 🌸 Dial buttons in grid
+            Expanded(
+              child: GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 22,
+                  crossAxisSpacing: 22,
+                ),
+                itemCount: dialKeys.length,
+                itemBuilder: (context, index) {
+                  final key = dialKeys[index][0];
+                  final letters = dialKeys[index][1];
+
+                  return TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 1.0, end: 1.0),
+                    duration: const Duration(milliseconds: 150),
+                    builder: (context, scale, child) {
+                      return Transform.scale(
+                        scale: scale,
+                        child: Material(
+                          color: Colors.transparent,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            splashColor: Colors.tealAccent.withOpacity(0.2),
+                            highlightColor: Colors.tealAccent.withOpacity(0.05),
+                            onTap: () async {
+                              HapticFeedback.lightImpact();
+                              _sendDtmf(key);
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withOpacity(0.08),
+                                border: Border.all(color: Colors.white24),
+                              ),
+                              alignment: Alignment.center,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    key,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  if (letters.isNotEmpty)
+                                    Text(
+                                      letters,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 11,
+                                        height: 0.9,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-            const SizedBox(height: 40),
+
+            const SizedBox(height: 32),
+
+            // 🔙 Hide keypad button
             IconButton(
               icon: const Icon(Icons.keyboard_hide,
-                  color: Colors.white, size: 36),
+                  color: Colors.white70, size: 36),
               onPressed: _toggleDialpad,
             ),
           ],
@@ -295,6 +343,7 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
       ),
     );
   }
+
 
   // unused listener hooks
   @override

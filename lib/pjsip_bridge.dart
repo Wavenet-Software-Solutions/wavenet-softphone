@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -11,7 +13,7 @@ import 'package:wavenetsoftphone/services/notification_service.dart';
 
 
 
-class SipProvider extends ChangeNotifier implements SipUaHelperListener {
+class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements SipUaHelperListener {
   // 💫 Singleton pattern
   static final SipProvider _instance = SipProvider._internal();
   factory SipProvider() => _instance;
@@ -29,6 +31,8 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
   String networkState = 'idle';
   String? error;
   Duration callDuration = Duration.zero;
+  Duration lastCallDuration = Duration.zero;
+
 
   final Stopwatch _stopwatch = Stopwatch();
   final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
@@ -37,6 +41,22 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
 
   final FlutterLocalNotificationsPlugin _notifications =
   FlutterLocalNotificationsPlugin();
+  final player = FlutterRingtonePlayer();
+
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("📶 App resumed — checking SIP connection...");
+      if (!registered) {
+        _helper.register();
+        debugPrint("🔄 Reconnecting SIP WebSocket...");
+      }
+    } else if (state == AppLifecycleState.paused) {
+      debugPrint("🌙 App paused — optionally keep connection or save state");
+    }
+  }
+
 
   void init() {
     _helper.addSipUaHelperListener(this);
@@ -46,6 +66,30 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
   Future<void> _initializeNotifications() async {
 
   }
+  Future<void> _startRingtone() async {
+    try {
+      debugPrint("🔔 Playing ringtone...");
+      await player.play(
+        android: AndroidSounds.ringtone,
+        ios: IosSounds.alarm,
+        looping: true, // 🔁 keep playing until answered or ended
+        volume: 1.0,
+        asAlarm: false,
+      );
+    } catch (e) {
+      debugPrint("⚠️ Failed to play ringtone: $e");
+    }
+  }
+
+  Future<void> _stopRingtone() async {
+    try {
+      await player.stop();
+      debugPrint("🔕 Ringtone stopped");
+    } catch (e) {
+      debugPrint("⚠️ Failed to stop ringtone: $e");
+    }
+  }
+
 
   Future<void> _showActiveCallNotification(String target, {bool muted = false}) async {
     await NotificationService().showActiveCall(activeCall?.remote_identity ?? 'Unknown');
@@ -123,6 +167,13 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
 
       _helper.start(settings);
       status = 'registering';
+      await FlutterForegroundTask.startService(
+        notificationTitle: 'Wavenet Softphone Running',
+        notificationText: 'Listening for incoming calls…',
+        callback: startCallback, // ✅ required now
+      );
+
+      debugPrint("🚀 Foreground service started to keep WebSocket alive.");
       error = null;
     } catch (e, s) {
       _setError("❌ Registration failed: $e");
@@ -185,7 +236,7 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
         'rtcOfferConstraints': {'offerToReceiveAudio': true, 'offerToReceiveVideo': false},
       });
       status = 'oncall';
-      _startTimer();
+      _startGlobalTimer();
       notifyListeners();
     } catch (e, s) {
       _setError("❌ Answer failed: $e");
@@ -193,15 +244,18 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
     }
   }
 
+
   // 🚫 Hang up
   Future<void> hangup() async {
     try {
       activeCall?.hangup();
-      _stopTimer();
+      _stopGlobalTimer();
       await saveCallHistory(
-        activeCall?.remote_identity?.toString() ?? 'Unknown',
-        activeCall?.session.causes.toString() ?? 'Unknown',
+        activeCall?.remote_identity ?? 'Unknown',
+        activeCall?.direction ?? 'Unknown',
+        duration: lastCallDuration,
       );
+
 
       activeCall = null;
       status = 'ended';
@@ -245,12 +299,45 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
   }
 
   // ⏱️ Timer
-  void _startTimer() => _stopwatch.start();
-  void _stopTimer() {
-    _stopwatch.stop();
-    callDuration = _stopwatch.elapsed;
-    _stopwatch.reset();
+
+  Timer? _timer;
+  final ValueNotifier<int> elapsedSeconds = ValueNotifier(0);
+  final ValueNotifier<String> callConnectionInfo = ValueNotifier<String>("Connecting…");
+  Timer? _elapsedTimer;
+
+  void _startGlobalTimer() {
+    _elapsedTimer?.cancel();
+    int seconds = 0;
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      seconds++;
+      elapsedSeconds.value = seconds;
+    });
   }
+
+  void _stopGlobalTimer() {
+    _elapsedTimer?.cancel();
+    if (_elapsedTimer != null) {
+      lastCallDuration = Duration(seconds: elapsedSeconds.value); // 💾 Save before reset
+    }
+    elapsedSeconds.value = 0;
+  }
+
+  // void _startTimer() {
+  //   if (_timer != null) return; // avoid duplicates
+  //   _stopwatch.start();
+  //   _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+  //     elapsedSeconds.value = _stopwatch.elapsed.inSeconds;
+  //   });
+  // }
+  //
+  // void _stopTimer() {
+  //   _timer?.cancel();
+  //   _timer = null;
+  //   _stopwatch.stop();
+  //   callDuration = _stopwatch.elapsed;
+  //   _stopwatch.reset();
+  //   elapsedSeconds.value = 0;
+  // }
 
   void _setError(String message) {
     error = message;
@@ -299,22 +386,33 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
     );
   }
 
-  Future<void> saveCallHistory(String name, String type) async {
+  Future<void> saveCallHistory(String name, String type, {Duration? duration}) async {
     final prefs = await SharedPreferences.getInstance();
     final calls = prefs.getStringList('recent_calls') ?? [];
 
     final now = DateTime.now();
-    final formatted =
-        "${now.toIso8601String()}|${name.trim()}|${type.trim()}";
+    final callDuration = duration ?? Duration.zero;
+    final formattedDuration =
+        "${callDuration.inHours.toString().padLeft(2, '0')}:"
+        "${(callDuration.inMinutes % 60).toString().padLeft(2, '0')}:"
+        "${(callDuration.inSeconds % 60).toString().padLeft(2, '0')}";
+
+    final formatted = "${now.toIso8601String()}|${name.trim()}|${type.trim()}|$formattedDuration";
+
+    // Prevent duplicate same-number logs in a short time window
+    if (calls.isNotEmpty && calls.first.contains(name)) {
+      calls.removeAt(0);
+    }
 
     calls.insert(0, formatted);
 
-    // 🔒 Keep last 50 calls only
+    // Keep latest 50 entries
     if (calls.length > 50) calls.removeRange(50, calls.length);
 
     await prefs.setStringList('recent_calls', calls);
     debugPrint("💾 Saved call: $formatted");
   }
+
 
   Future<void> _hideIncomingCallNotification() async {
     try {
@@ -324,27 +422,71 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
       debugPrint("⚠️ Failed to hide notification: $e");
     }
   }
+  // 🧠 Holds live connection info from ICE / WebRTC
+
+  void updateConnectionStatus(String status) {
+    callConnectionInfo.value = status;
+    debugPrint("🌐 Connection updated: $status");
+  }
+
+  void observeNetworkState(Call? call) {
+    final pc = call?.peerConnection;
+    if (pc == null) {
+      debugPrint("⚠️ No PeerConnection available for network observation.");
+      return;
+    }
+
+    pc.onIceConnectionState = (state) {
+      debugPrint('🌐 ICE State: $state');
+      switch (state) {
+        case RTCIceConnectionState.RTCIceConnectionStateConnected:
+          callConnectionInfo.value = "RTC Connected ✅";
+          break;
+        case RTCIceConnectionState.RTCIceConnectionStateCompleted:
+          callConnectionInfo.value = "Connection Stable 💚";
+          break;
+        case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
+          callConnectionInfo.value = "Disconnected ⚠️";
+          break;
+        case RTCIceConnectionState.RTCIceConnectionStateFailed:
+          callConnectionInfo.value = "Network Failed ❌";
+          break;
+        default:
+          callConnectionInfo.value = "Connecting…";
+          break;
+      }
+
+      notifyListeners(); // 💫 Notify all UIs (floating + call screen)
+    };
+  }
 
 
   @override
   void callStateChanged(Call call, CallState callState) async {
     activeCall = call;
-    final direction = call.direction?.toUpperCase() ?? "UNKNOWN";
+    final direction = call.direction.toUpperCase() ?? "UNKNOWN";
     final state = callState.state;
 
     debugPrint("📞 Call state: $state ($direction)");
+
+    // Shared connection status for all UIs 💫
+    String connectionInfo = "Connecting…";
 
     // 📲 Incoming call
     if (state == CallStateEnum.CALL_INITIATION && direction == 'INCOMING') {
       final caller = call.remote_identity ?? "Unknown Caller";
       debugPrint("📲 Incoming call from $caller");
-
+      observeNetworkState(activeCall);
+      connectionInfo = "Ringing 📳";
+      await _startRingtone();
+      callConnectionInfo.value = connectionInfo;
       await _showIncomingCallNotification(caller);
 
       navigatorKey.currentState?.pushNamed(
         '/incoming',
         arguments: call,
       );
+      notifyListeners();
       return;
     }
 
@@ -352,25 +494,37 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
     if (state == CallStateEnum.PROGRESS && direction == 'OUTGOING') {
       debugPrint("📤 Outgoing call to ${call.remote_identity}");
       status = 'calling';
+      observeNetworkState(activeCall);
+      connectionInfo = "Dialing…";
+      callConnectionInfo.value = connectionInfo;
       notifyListeners();
       return;
     }
+
+    // 🎧 Media stream (when audio/video established)
     if (state == CallStateEnum.STREAM) {
-      debugPrint("✅ Call active — show ongoing notification");
+      debugPrint("✅ Call media stream active — starting timer");
       await _hideIncomingCallNotification();
       status = 'oncall';
-      _startTimer();
+      connectionInfo = "Call Connected ✅";
+      callConnectionInfo.value = connectionInfo;
+
+      _startGlobalTimer();
       await _showActiveCallNotification(call.remote_identity ?? 'Unknown');
       notifyListeners();
+      return;
     }
 
-
-    // ✅ Call confirmed (answered)
+    // ☎️ Call confirmed (answered)
     if (state == CallStateEnum.CONFIRMED) {
-      debugPrint("✅ Call answered — hiding notification bar");
-      await _hideIncomingCallNotification(); // 🔕 hide notification when answered
+      debugPrint("💚 Call confirmed — connected");
+      await _hideIncomingCallNotification();
+      await _stopRingtone();
       status = 'oncall';
-      _startTimer();
+      connectionInfo = "Call Confirmed 💚";
+      callConnectionInfo.value = connectionInfo;
+
+      _startGlobalTimer();
       notifyListeners();
       return;
     }
@@ -378,21 +532,33 @@ class SipProvider extends ChangeNotifier implements SipUaHelperListener {
     // 💔 Call ended or failed
     if (state == CallStateEnum.ENDED || state == CallStateEnum.FAILED) {
       debugPrint("❌ Call ended: ${callState.cause}");
-      await _hideIncomingCallNotification(); // 🧹 make sure it’s cleared
-      _stopTimer();
+      await _hideIncomingCallNotification();
+      await _stopRingtone();
+      _stopGlobalTimer();
+
       activeCall = null;
       status = 'ended';
+      connectionInfo = state == CallStateEnum.FAILED
+          ? "Connection Failed ❌"
+          : "Call Ended 💔";
+      callConnectionInfo.value = connectionInfo;
       notifyListeners();
 
-      // 💾 Optional call log
+      // 💾 Save in call history
       final callType = direction == 'INCOMING'
           ? (state == CallStateEnum.FAILED ? 'Missed' : 'Incoming')
           : 'Outgoing';
-      await saveCallHistory(call.remote_identity ?? 'Unknown', callType);
+      await saveCallHistory(
+        call.remote_identity ?? 'Unknown',
+        callType,
+        duration: lastCallDuration,
+      );
 
       return;
     }
 
+    // Default fallback
+    callConnectionInfo.value = connectionInfo;
     status = state.toString();
     notifyListeners();
   }

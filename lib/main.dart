@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wavenetsoftphone/widgets/active_call_floating_widget.dart';
 import 'pjsip_bridge.dart';
 import 'screens/login_screen.dart';
 import 'screens/keypad_screen.dart';
@@ -14,6 +15,8 @@ import 'screens/incoming_callscreen.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'screens/recent_call_screen.dart';
 import 'screens/voicemail_screen.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'services/background_service.dart';
 
 
 Future<void> _requestAppPermissions() async {
@@ -53,10 +56,41 @@ Future<void> _requestAppPermissions() async {
   debugPrint("✅ Permission check complete!");
 }
 
+@pragma('vm:entry-point')
+void startCallback() {
+  FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
+}
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize service (safe on UI isolate)
+   FlutterForegroundTask.init(
+    androidNotificationOptions: AndroidNotificationOptions(
+      channelId: 'wavenet_foreground',
+      channelName: 'Wavenet Softphone Background',
+      channelDescription: 'Keeps SIP running for incoming calls',
+      channelImportance: NotificationChannelImportance.HIGH,
+      priority: NotificationPriority.HIGH,
+      iconData: const NotificationIconData(
+        resType: ResourceType.mipmap,
+        resPrefix: ResourcePrefix.ic,
+        name: 'launcher',
+      ),
+    ),
+    iosNotificationOptions: const IOSNotificationOptions(
+      showNotification: false,
+      playSound: false,
+    ),
+    foregroundTaskOptions: const ForegroundTaskOptions(
+      autoRunOnBoot: true,
+      allowWakeLock: true,
+      allowWifiLock: true,
+    ),
+  );
+
+  // Register background handler
+  FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
   final sipProvider = SipProvider()..init();
   await _requestAppPermissions();
   runApp(
@@ -85,7 +119,7 @@ class SoftphoneApp extends StatelessWidget {
       home: const _AppShell(),
       routes: {
         '/login': (_) => const LoginScreen(),
-        '/home': (_) => const KeypadScreen(),
+        '/home': (_) => const _AppShell(),
         '/call': (_) => const CallScreen(),
         '/incoming': (context) {
           final call = ModalRoute.of(context)!.settings.arguments as Call;
@@ -180,39 +214,69 @@ class _AppShellState extends State<_AppShell>
   Widget build(BuildContext context) {
     final sip = context.watch<SipProvider>();
 
+    debugPrint("📡 SipProvider status: ${sip.status}");
+    debugPrint("📞 ActiveCall: ${sip.activeCall}");
+    debugPrint("🎯 Should show floating UI: ${sip.activeCall != null &&
+        (sip.status.contains('oncall') || sip.status.contains('CONFIRMED') ||
+            sip.status.contains('STREAM'))}");
+
     // ⏳ Show loading spinner until auto-login check is done
     if (_checkingLogin) {
+      debugPrint("⏳ Still checking login...");
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     // 🔐 Not logged in? → Go to login screen
-    if (!_loggedIn) return const LoginScreen();
+    if (!_loggedIn) {
+      debugPrint("🔒 Not logged in — showing LoginScreen");
+      return const LoginScreen();
+    }
 
     // ✅ Logged in → show KeypadScreen immediately
-    return Scaffold(
-      body: AnimatedBuilder(
-        animation: _animation,
-        builder: (context, child) {
-          return ClipPath(
-            clipper: _BlackHoleClipper(_animation.value),
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: _pages,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Scaffold(
+          body: AnimatedBuilder(
+            animation: _animation,
+            builder: (context, child) {
+              return ClipPath(
+                clipper: _BlackHoleClipper(_animation.value),
+                child: IndexedStack(
+                  index: _selectedIndex,
+                  children: _pages,
+                ),
+              );
+            },
+          ),
+          bottomNavigationBar: AnimatedBottomNavBar(
+            currentIndex: _selectedIndex,
+            onTap: _onTabSelected,
+          ),
+        ),
+
+        // 🌸 Floating mini call widget only during active call
+        if (sip.activeCall != null &&
+            (sip.status.contains('oncall') ||
+                sip.status.contains('CONFIRMED') ||
+                sip.status.contains('STREAM')))
+          const Positioned.fill(
+            child: IgnorePointer(
+              ignoring: false,
+              child: Stack(
+                children: [ActiveCallFloatingWidget()],
+              ),
             ),
-          );
-        },
-      ),
-      bottomNavigationBar: AnimatedBottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onTabSelected,
-      ),
+          ),
+      ],
     );
   }
 }
 
-class _BlackHoleClipper extends CustomClipper<Path> {
+
+  class _BlackHoleClipper extends CustomClipper<Path> {
   final double progress;
   _BlackHoleClipper(this.progress);
 
