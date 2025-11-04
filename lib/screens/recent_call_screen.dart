@@ -12,47 +12,53 @@ class RecentCallsScreen extends StatefulWidget {
 
 class _RecentCallsScreenState extends State<RecentCallsScreen> {
   List<Map<String, dynamic>> _recentCalls = [];
+  late SipProvider sip;
+  bool _disposed = false; // 🛡️ extra safety
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // ✅ Attach listener only once
+    sip = Provider.of<SipProvider>(context, listen: false);
+    sip.removeListener(_loadRecentCalls); // remove old to prevent duplicates
+    sip.addListener(_loadRecentCalls);
+  }
 
   @override
   void initState() {
     super.initState();
     _loadRecentCalls();
-
-    // 💫 Auto refresh when SipProvider updates
-    Future.microtask(() {
-      final sip = context.read<SipProvider>();
-      sip.addListener(_loadRecentCalls);
-    });
   }
 
   @override
   void dispose() {
-    final sip = context.read<SipProvider>();
+    _disposed = true;
     sip.removeListener(_loadRecentCalls);
     super.dispose();
   }
 
   Future<void> _loadRecentCalls() async {
+    // prevent updates after dispose or during logout
+    if (_disposed) return;
+
     final prefs = await SharedPreferences.getInstance();
     final calls = prefs.getStringList('recent_calls') ?? [];
+
+    if (!mounted || _disposed) return;
 
     setState(() {
       _recentCalls = calls.map((e) {
         final parts = e.split('|');
-        if (parts.length < 4) return <String, dynamic>{};
         return {
-          'time': parts[0],
-          'name': parts[1],
-          'type': parts[2],
-          'duration': parts[3],
+          'name': parts[0],
+          'type': parts[1],
+          'time': parts.length > 2 ? parts[2] : '',
+          'duration': parts.length > 3 ? parts[3] : '',
         };
-      }).where((e) => e.isNotEmpty).toList().cast<Map<String, dynamic>>();
-
-      // Sort newest first
-      _recentCalls.sort((a, b) => b['time'].compareTo(a['time']));
+      }).toList();
     });
   }
-
 
   IconData _getIcon(String type) {
     switch (type.toLowerCase()) {
@@ -106,8 +112,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
-            margin:
-            const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             child: ListTile(
               leading: Icon(
                 _getIcon(call['type']),
@@ -116,12 +121,13 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
               ),
               title: Text(
                 call['name'],
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 16),
+                style:
+                const TextStyle(color: Colors.white, fontSize: 16),
               ),
               subtitle: Text(
-                "Duration: ${call['duration']}",
-                style: const TextStyle(color: Colors.white38, fontSize: 13),
+                "Duration: ${call['duration'] ?? '—'}",
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 13),
               ),
               trailing: const Icon(Icons.phone_forwarded,
                   color: Colors.white24, size: 18),

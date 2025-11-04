@@ -147,9 +147,13 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
     notifyListeners();
 
     try {
-      final wsUrl = domain.startsWith('wss://') || domain.contains(':8089')
-          ? 'wss://$domain:8089/ws'
-          : 'ws://$domain:8088/ws';
+      // 🧩 Build WebSocket URL directly from user input
+      String wsUrl = domain;
+      if (!domain.startsWith('ws://') && !domain.startsWith('wss://')) {
+        // Default to ws:// if user didn’t include scheme
+        wsUrl = 'ws://$domain/ws';
+      }
+
       final uri = 'sip:$username@$domain';
 
       final settings = UaSettings()
@@ -162,18 +166,21 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
         ..userAgent = 'WavenetWebRTC/1.0'
         ..transportType = TransportType.WS
         ..webSocketSettings.allowBadCertificate = true
-        ..iceServers = [{'urls': 'stun:stun.l.google.com:19302'}];
+        ..iceServers = [
+          {'urls': 'stun:stun.l.google.com:19302'}
+        ];
 
       debugPrint("🔧 SIP Config:\n - WS: ${settings.webSocketUrl}\n - URI: ${settings.uri}");
 
       _helper.start(settings);
       status = 'registering';
-      if(Platform.isAndroid){
-      await FlutterForegroundTask.startService(
-        notificationTitle: 'Wavenet Softphone Running',
-        notificationText: 'Listening for incoming calls…',
-        callback: startCallback, // ✅ required now
-      );
+
+      if (Platform.isAndroid) {
+        await FlutterForegroundTask.startService(
+          notificationTitle: 'Wavenet Softphone Running',
+          notificationText: 'Listening for incoming calls…',
+          callback: startCallback, // 💫 background handler
+        );
       }
 
       debugPrint("🚀 Foreground service started to keep WebSocket alive.");
@@ -184,6 +191,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       connecting = false;
       notifyListeners();
     }
+
   }
 
 
