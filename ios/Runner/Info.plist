@@ -78,10 +78,6 @@
         <string>_sip._udp</string>
         <string>_sip._tcp</string>
     </array>
-
-    <key>UIApplicationExitsOnSuspend</key>
-    <false/>
-
     <key>UIRequiresPersistentWiFi</key>
     <true/>
 
