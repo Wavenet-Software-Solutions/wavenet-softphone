@@ -251,13 +251,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       debugPrint("📞 Answering call id=$callId, remote=${activeCall?.remote_identity}");
       activeCall!.answer({
         'mediaConstraints': {
-          'audio': {
-            'sampleRate': 8000,
-            'channelCount': 1,
-            'echoCancellation': true,
-            'noiseSuppression': true,
-            'autoGainControl': true,
-          },
+          'audio': true,
           'video': false
         },
         'rtcOfferConstraints': {'offerToReceiveAudio': true, 'offerToReceiveVideo': false},
