@@ -36,9 +36,19 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
     _attachMedia();
   }
 
+  // Future<void> _initRenderers() async {
+  //   await _localRenderer.initialize();
+  //   await _remoteRenderer.initialize();
+  // }
+
   Future<void> _initRenderers() async {
-    await _localRenderer.initialize();
-    await _remoteRenderer.initialize();
+    try {
+      await _localRenderer.initialize();
+      await _remoteRenderer.initialize();
+      debugPrint("🎬 Renderers initialized!");
+    } catch (e) {
+      debugPrint("⚠️ Renderer init failed: $e");
+    }
   }
 
   Future<void> _attachMedia() async {
@@ -53,36 +63,41 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
       return;
     }
 
-    // 💫 Attach remote streams
+    // Handle remote stream
     final remoteStreams = pc.getRemoteStreams();
     if (remoteStreams.isNotEmpty) {
       final stream = remoteStreams.first;
-
-      final hasVideo = (stream?.getVideoTracks()?.isNotEmpty ?? false);
-
-      if (hasVideo) {
-        debugPrint("🎥 Attaching remote video stream...");
-        _remoteRenderer.srcObject = stream;
-      } else {
-        debugPrint("🔈 Remote audio-only call — skipping video attach.");
+      if (stream != null) {
+        final hasVideo = stream.getVideoTracks().isNotEmpty;
+        if (hasVideo) {
+          _remoteRenderer.srcObject = stream;
+          debugPrint("🎥 Attached remote video stream");
+        } else {
+          debugPrint("🔈 Audio-only remote stream — no video renderer attached");
+        }
       }
+    } else {
+      debugPrint("💭 No remote streams available yet");
     }
 
-    // 💫 Attach local streams
+    // Handle local stream
     final localStreams = pc.getLocalStreams();
     if (localStreams.isNotEmpty) {
       final stream = localStreams.first;
-
-      final hasVideo = (stream?.getVideoTracks().isNotEmpty ?? false);
-
-      if (hasVideo) {
-        debugPrint("📹 Attaching local video stream...");
-        _localRenderer.srcObject = stream;
-      } else {
-        debugPrint("🎤 Local audio-only call — skipping local video attach.");
+      if (stream != null) {
+        final hasVideo = stream.getVideoTracks().isNotEmpty;
+        if (hasVideo) {
+          _localRenderer.srcObject = stream;
+          debugPrint("📹 Attached local video stream");
+        } else {
+          debugPrint("🎤 Local audio-only — skipping video renderer");
+        }
       }
+    } else {
+      debugPrint("💭 No local streams available yet");
     }
   }
+
 
 
 
