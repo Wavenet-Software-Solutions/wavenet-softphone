@@ -60,7 +60,9 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
 
   void init() {
-    _helper.addSipUaHelperListener(this);
+    _helper.addSipUaHelperListener(
+      _SafeSipListener(this),
+    );
     _initializeNotifications();
   }
 
@@ -126,6 +128,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
     debugPrint("💔 SipProvider.dispose() called — singleton persists");
     super.dispose();
   }
+
 
   // 🚀 Register user
   Future<void> register(String username, String password, String domain) async {
@@ -237,9 +240,17 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       return;
     }
 
+    final callId = activeCall?.id;
+    if (callId == null || callId.isEmpty) {
+      debugPrint("🚫 Attempted to answer call with null ID — skipping to prevent plugin crash.");
+      _setError("❌ Cannot answer — invalid call state (null ID).");
+      return;
+    }
+
     try {
+      debugPrint("📞 Answering call id=$callId, remote=${activeCall?.remote_identity}");
       activeCall!.answer({
-        'mediaConstraints': {'audio': {
+        'mediaConstraints': {
           'audio': {
             'sampleRate': 8000,
             'channelCount': 1,
@@ -247,11 +258,12 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
             'noiseSuppression': true,
             'autoGainControl': true,
           },
-        }, 'video': false},
+          'video': false
+        },
         'rtcOfferConstraints': {'offerToReceiveAudio': true, 'offerToReceiveVideo': false},
       });
-      await Helper.setSpeakerphoneOn(false);
 
+      await Helper.setSpeakerphoneOn(false);
       status = 'oncall';
       _startGlobalTimer();
       notifyListeners();
@@ -260,6 +272,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       debugPrint("Answer error: $e\n$s");
     }
   }
+
 
 
   // 🚫 Hang up
@@ -603,3 +616,44 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
   @override
   void onNewReinvite(ReInvite event) {}
 }
+
+class _SafeSipListener extends SipUaHelperListener {
+  final SipProvider provider;
+  _SafeSipListener(this.provider);
+
+  @override
+  void callStateChanged(Call call, CallState callState) {
+    try {
+      provider.callStateChanged(call, callState);
+    } catch (e, s) {
+      debugPrint("🚨 Prevented SIP crash in callStateChanged: $e\n$s");
+    }
+  }
+
+  @override
+  void registrationStateChanged(RegistrationState state) {
+    try {
+      provider.registrationStateChanged(state);
+    } catch (e, s) {
+      debugPrint("🚨 Prevented SIP crash in registrationStateChanged: $e\n$s");
+    }
+  }
+
+  @override
+  void transportStateChanged(TransportState state) {
+    try {
+      provider.transportStateChanged(state);
+    } catch (e, s) {
+      debugPrint("🚨 Prevented SIP crash in transportStateChanged: $e\n$s");
+    }
+  }
+
+  // forward remaining listener methods safely
+  @override
+  void onNewMessage(SIPMessageRequest msg) => provider.onNewMessage(msg);
+  @override
+  void onNewNotify(Notify ntf) => provider.onNewNotify(ntf);
+  @override
+  void onNewReinvite(ReInvite event) => provider.onNewReinvite(event);
+}
+
