@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
   ffi: ^2.1.2
   provider: ^6.0.5
   cupertino_icons: ^1.0.8
@@ -36,6 +37,7 @@ flutter:
   assets:
     - assets/icons/app_icon.png
     - assets/icons/ic_notification.png
+    - assets/sounds/finder.mp3
 
 # 👇 place this OUTSIDE the `flutter:` block!
 flutter_launcher_icons:

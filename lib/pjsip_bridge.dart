@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -42,7 +42,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
   final FlutterLocalNotificationsPlugin _notifications =
   FlutterLocalNotificationsPlugin();
-  final player = FlutterRingtonePlayer();
+  final player = AudioPlayer();
 
 
   @override
@@ -67,16 +67,12 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
   Future<void> _initializeNotifications() async {
 
   }
+
   Future<void> _startRingtone() async {
     try {
-      debugPrint("🔔 Playing ringtone...");
-      await player.play(
-        android: AndroidSounds.ringtone,
-        ios: IosSounds.alarm,
-        looping: true, // 🔁 keep playing until answered or ended
-        volume: 1.0,
-        asAlarm: false,
-      );
+      debugPrint("🔔 Playing custom ringtone...");
+      await player.setReleaseMode(ReleaseMode.loop);
+      await player.play(AssetSource('sounds/finder.mp3'));
     } catch (e) {
       debugPrint("⚠️ Failed to play ringtone: $e");
     }
@@ -233,7 +229,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       debugPrint("Call error: $e\n$s");
     }
   }
-
+  
   // 📲 Answer call
   Future<void> answer() async {
     if (activeCall == null) {
@@ -243,9 +239,19 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
     try {
       activeCall!.answer({
-        'mediaConstraints': {'audio': true, 'video': false},
+        'mediaConstraints': {'audio': {
+          'audio': {
+            'sampleRate': 8000,
+            'channelCount': 1,
+            'echoCancellation': true,
+            'noiseSuppression': true,
+            'autoGainControl': true,
+          },
+        }, 'video': false},
         'rtcOfferConstraints': {'offerToReceiveAudio': true, 'offerToReceiveVideo': false},
       });
+      await Helper.setSpeakerphoneOn(false);
+
       status = 'oncall';
       _startGlobalTimer();
       notifyListeners();
