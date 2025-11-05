@@ -42,20 +42,49 @@ class _CallScreenState extends State<CallScreen> implements SipUaHelperListener 
   }
 
   Future<void> _attachMedia() async {
-    if (_call == null) return;
-    final pc = _call!.peerConnection;
-    if (pc == null) return;
+    if (_call == null) {
+      debugPrint("⚠️ No call yet, skipping attachMedia");
+      return;
+    }
 
+    final pc = _call!.peerConnection;
+    if (pc == null) {
+      debugPrint("⚠️ No PeerConnection yet");
+      return;
+    }
+
+    // 💫 Attach remote streams
     final remoteStreams = pc.getRemoteStreams();
     if (remoteStreams.isNotEmpty) {
-      _remoteRenderer.srcObject = remoteStreams.first;
+      final stream = remoteStreams.first;
+
+      final hasVideo = (stream?.getVideoTracks()?.isNotEmpty ?? false);
+
+      if (hasVideo) {
+        debugPrint("🎥 Attaching remote video stream...");
+        _remoteRenderer.srcObject = stream;
+      } else {
+        debugPrint("🔈 Remote audio-only call — skipping video attach.");
+      }
     }
 
+    // 💫 Attach local streams
     final localStreams = pc.getLocalStreams();
     if (localStreams.isNotEmpty) {
-      _localRenderer.srcObject = localStreams.first;
+      final stream = localStreams.first;
+
+      final hasVideo = (stream?.getVideoTracks().isNotEmpty ?? false);
+
+      if (hasVideo) {
+        debugPrint("📹 Attaching local video stream...");
+        _localRenderer.srcObject = stream;
+      } else {
+        debugPrint("🎤 Local audio-only call — skipping local video attach.");
+      }
     }
   }
+
+
 
   // 🎵 Send DTMF tone
   Future<void> _sendDtmf(String tone) async {
