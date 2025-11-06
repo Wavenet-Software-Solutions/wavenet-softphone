@@ -3,6 +3,22 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:wavenetsoftphone/pjsip_bridge.dart';
 import '../global_keys.dart';
 
+
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) async {
+  final action = response.actionId;
+  final payload = response.payload;
+  debugPrint("🍎 Background tap received: $action | payload: $payload");
+  final sip = SipProvider();
+  if (payload == 'incoming_call') {
+    if (action == 'ACCEPT') await sip.answer();
+    if (action == 'DECLINE') await sip.hangup();
+  } else if (payload == 'active_call') {
+    if (action == 'MUTE_ACTION') await sip.toggleMute();
+    if (action == 'HANGUP_ACTION') await sip.hangup();
+  }
+}
+
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -39,7 +55,9 @@ class NotificationService {
     await plugin.initialize(
       settings,
       onDidReceiveNotificationResponse: _handleAction,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+
 
     debugPrint("🔔 Unified NotificationService initialized!");
   }

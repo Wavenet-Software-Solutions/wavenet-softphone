@@ -256,8 +256,6 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
         },
         'rtcOfferConstraints': {'offerToReceiveAudio': true, 'offerToReceiveVideo': false},
       });
-
-      await Helper.setSpeakerphoneOn(false);
       status = 'oncall';
       _startGlobalTimer();
       notifyListeners();
