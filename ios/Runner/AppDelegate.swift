@@ -2,6 +2,8 @@ import UIKit
 import Flutter
 import UserNotifications
 import flutter_local_notifications // 💡 required for background isolate handling
+import Flutter
+import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -9,6 +11,14 @@ import flutter_local_notifications // 💡 required for background isolate handl
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // ✅ Activate background audio session
+    do {
+      try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      try AVAudioSession.sharedInstance().setActive(true)
+      print("🎧 AVAudioSession configured for background audio")
+    } catch {
+      print("⚠️ AVAudioSession configuration failed: \(error)")
+    }
 
     // 🌸 Required to make background notification actions work
     FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { (registry) in

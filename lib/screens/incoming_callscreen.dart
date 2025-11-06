@@ -13,6 +13,7 @@ class IncomingCallScreen extends StatefulWidget {
 
 class _IncomingCallScreenState extends State<IncomingCallScreen>
     with TickerProviderStateMixin {
+  late final ValueNotifier<CallStateEnum?> _callNotifier;
   double _dragOffset = 0.0;
   bool _accepted = false;
   bool _declined = false;
@@ -26,23 +27,27 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   void initState() {
     super.initState();
 
-    // 💫 Button pulse
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
+    // existing animation setup...
+    _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _pulseAnimation = Tween<double>(begin: 0.95, end: 1.1).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-
-    // 🌈 Arrows fading animation
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat(reverse: true);
+    _fadeController = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
     _arrowOpacity = Tween<double>(begin: 0.2, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
+    _callNotifier = SipProvider().callStateNotifier;
+    _callNotifier.addListener(_handleCallState);
+  }
+
+  void _handleCallState() {
+    final state = _callNotifier.value;
+    if (state == CallStateEnum.ENDED || state == CallStateEnum.FAILED) {
+      if (mounted) {
+        debugPrint("📞 Caller hung up — closing incoming call screen");
+        Navigator.pop(context);
+      }
+    }
   }
 
   @override
@@ -61,8 +66,20 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   Future<void> _declineCall() async {
     await SipProvider().hangup();
     if (!mounted) return;
-    Navigator.pop(context);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = Navigator.of(context);
+
+      // ✅ Check first — only pop if something is on the stack
+      if (nav.canPop()) {
+        nav.pop();
+      } else {
+        // ✅ If there's nothing to pop, just close the screen safely
+        debugPrint("⚠️ No route to pop — ignoring to avoid black screen");
+      }
+    });
   }
+
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
     setState(() {
