@@ -1,6 +1,6 @@
-import Flutter
 import UIKit
-import UserNotifications
+import Flutter
+import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -8,24 +8,16 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    UNUserNotificationCenter.current().delegate = self
-
-    // 🌸 Register iOS notification categories
-    let muteAction = UNNotificationAction(identifier: "MUTE_ACTION",
-                                          title: "Mute/Unmute 🎙️",
-                                          options: [])
-    let hangupAction = UNNotificationAction(identifier: "HANGUP_ACTION",
-                                            title: "Hang Up 💔",
-                                            options: [.destructive])
-
-    let activeCategory = UNNotificationCategory(identifier: "active_call",
-                                                actions: [muteAction, hangupAction],
-                                                intentIdentifiers: [],
-                                                options: [])
-    UNUserNotificationCenter.current().setNotificationCategories([activeCategory])
+    // ✅ Activate background audio session
+    do {
+      try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      try AVAudioSession.sharedInstance().setActive(true)
+      print("🎧 AVAudioSession configured for background audio")
+    } catch {
+      print("⚠️ AVAudioSession configuration failed: \(error)")
+    }
 
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }
-

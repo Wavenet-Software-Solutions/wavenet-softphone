@@ -35,11 +35,10 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
   Duration lastCallDuration = Duration.zero;
 
 
+  final ValueNotifier<CallStateEnum?> callStateNotifier = ValueNotifier(null);
   final Stopwatch _stopwatch = Stopwatch();
   final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
-
   SIPUAHelper get helper => _helper;
-
   final FlutterLocalNotificationsPlugin _notifications =
   FlutterLocalNotificationsPlugin();
   final player = AudioPlayer();
@@ -223,7 +222,30 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
     try {
       debugPrint("📞 Calling $target ...");
-      _helper.call(target, voiceOnly: true);
+      // _helper.call(target, voiceOnly: true);
+      final Map<String, dynamic> mediaConstraints = {
+        'audio': {
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
+        'video': false,
+      };
+
+      final Map<String, dynamic> offerConstraints = {
+        'offerToReceiveAudio': true,
+        'offerToReceiveVideo': false,
+      };
+
+      _helper.call(
+        target,
+        voiceOnly: true,
+        customOptions: {
+          'mediaConstraints': mediaConstraints,
+          'rtcOfferConstraints': offerConstraints,
+        },
+      );
+
       status = 'calling';
       error = null;
       notifyListeners();
@@ -251,13 +273,17 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       debugPrint("📞 Answering call id=$callId, remote=${activeCall?.remote_identity}");
       activeCall!.answer({
         'mediaConstraints': {
-          'audio': true,
+          'audio': {
+            'echoCancellation': true,    // ✅ Echo cancellation
+            'noiseSuppression': true,    // ✅ Noise suppression
+            'autoGainControl': true,     // ✅ Auto gain control
+          },
           'video': false
         },
         'rtcOfferConstraints': {'offerToReceiveAudio': true, 'offerToReceiveVideo': false},
       });
 
-      await Helper.setSpeakerphoneOn(false);
+      // await Helper.setSpeakerphoneOn(false);
       status = 'oncall';
       _startGlobalTimer();
       notifyListeners();
@@ -490,6 +516,8 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
     activeCall = call;
     final direction = call.direction.toUpperCase() ?? "UNKNOWN";
     final state = callState.state;
+    callStateNotifier.value = state; // notify all listeners
+
 
     debugPrint("📞 Call state: $state ($direction)");
 
