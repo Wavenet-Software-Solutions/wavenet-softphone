@@ -554,32 +554,35 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
     }
 
     // 🎧 Media stream (when audio/video established)
-    if (state == CallStateEnum.STREAM) {
-      debugPrint("✅ Call media stream active — starting timer");
-      await _hideIncomingCallNotification();
-      status = 'oncall';
-      connectionInfo = "Call Connected ✅";
-      callConnectionInfo.value = connectionInfo;
-
-      _startGlobalTimer();
-      await _showActiveCallNotification(call.remote_identity ?? 'Unknown');
-      notifyListeners();
-      return;
-    }
-
-    // ☎️ Call confirmed (answered)
     if (state == CallStateEnum.CONFIRMED) {
       debugPrint("💚 Call confirmed — connected");
-      await _hideIncomingCallNotification();
-      await _stopRingtone();
+
+      // ⚡ Run non-critical awaits in background
+      unawaited(_hideIncomingCallNotification());
+      unawaited(_stopRingtone());
+
       status = 'oncall';
-      connectionInfo = "Call Confirmed 💚";
-      callConnectionInfo.value = connectionInfo;
+      callConnectionInfo.value = "Call Confirmed 💚";
 
       _startGlobalTimer();
       notifyListeners();
       return;
     }
+
+
+    // // ☎️ Call confirmed (answered)
+    // if (state == CallStateEnum.CONFIRMED) {
+    //   debugPrint("💚 Call confirmed — connected");
+    //   await _hideIncomingCallNotification();
+    //   await _stopRingtone();
+    //   status = 'oncall';
+    //   connectionInfo = "Call Confirmed 💚";
+    //   callConnectionInfo.value = connectionInfo;
+    //
+    //   _startGlobalTimer();
+    //   notifyListeners();
+    //   return;
+    // }
 
     // 💔 Call ended or failed
     if (state == CallStateEnum.ENDED || state == CallStateEnum.FAILED) {
