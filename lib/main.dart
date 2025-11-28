@@ -1,6 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_callkit_incoming/entities/android_params.dart';
+import 'package:flutter_callkit_incoming/entities/call_event.dart';
+import 'package:flutter_callkit_incoming/entities/call_kit_params.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavenetsoftphone/widgets/active_call_floating_widget.dart';
@@ -63,11 +68,18 @@ void startCallback() {
   FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
 }
 
+Future<void> requestFullScreenIntentPermission() async {
+  try {
+    final result = await FlutterCallkitIncoming.requestFullIntentPermission();
+    debugPrint("📣 FullScreenIntent Permission: $result");
+  } catch (e) {
+    debugPrint("⚠️ Error requesting FullScreenIntent: $e");
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize service (safe on UI isolate)
-
   if (Platform.isAndroid) {
      FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -164,6 +176,10 @@ class _AppShellState extends State<_AppShell>
   @override
   void initState() {
     super.initState();
+     requestFullScreenIntentPermission();
+    final sip = Provider.of<SipProvider>(context, listen: false);
+    setupCallKitEvents(sip);       // FIX #1
+    bindIncomingCallsToCallKit(sip); // FIX #2
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -171,6 +187,48 @@ class _AppShellState extends State<_AppShell>
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
     _tryAutoLogin();
   }
+
+
+  void bindIncomingCallsToCallKit(SipProvider sip) {
+    sip.onIncomingCall.listen((call) async {
+      final caller = call.remote_identity ?? "Unknown";
+      final uuid = call.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+      CallKitParams params = CallKitParams(
+        id: uuid,
+        nameCaller: caller,
+        appName: 'Wavenet Softphone',
+        handle: caller,
+        type: 0, // audio
+        textAccept: 'Answer',
+        textDecline: 'Decline',
+        duration: 30000,
+
+        android: AndroidParams(
+          isCustomNotification: false,
+          isShowLogo: false,
+          ringtonePath: 'system_ringtone_default',
+          backgroundColor: '#0955fa',
+          actionColor: '#4CAF50',
+          textColor: '#ffffff',
+          incomingCallNotificationChannelName: "Incoming Calls",
+          missedCallNotificationChannelName: "Missed Calls",
+        ),
+
+        missedCallNotification: NotificationParams(
+          showNotification: true,
+          isShowCallback: true,
+          subtitle: 'Missed Call',
+          callbackText: 'Call back',
+        ),
+      );
+
+      await FlutterCallkitIncoming.showCallkitIncoming(params);
+    });
+  }
+
+
+
 
   Future<void> _tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
@@ -209,6 +267,33 @@ class _AppShellState extends State<_AppShell>
     _controller.forward(from: 0);
     setState(() => _selectedIndex = index);
   }
+
+  void setupCallKitEvents(SipProvider sip) {
+    FlutterCallkitIncoming.onEvent.listen((CallEvent? event) {
+      if (event == null) return;
+
+      final type = event.event;
+
+      switch (type) {
+        case Event.actionCallAccept:
+          sip.answer();
+          navigatorKey.currentState?.pushNamed('/call', arguments: sip.activeCall);
+          break;
+
+        case Event.actionCallDecline:
+        case Event.actionCallEnded:
+        case Event.actionCallTimeout:
+          sip.hangup();
+          break;
+
+        default:
+          break;
+      }
+    });
+  }
+
+
+
 
   @override
   void dispose() {

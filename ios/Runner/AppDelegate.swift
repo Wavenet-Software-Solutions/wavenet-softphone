@@ -112,7 +112,10 @@ import PushKit
                     didReceiveIncomingPushWith payload: PKPushPayload,
                     for type: PKPushType) {
 
-    print("📞 Incoming VoIP push received: \(payload.dictionaryPayload)")
+     print(credentials.token)
+     let deviceToken = credentials.token.map { String(format: "%02x", $0) }.joined()
+     // Save deviceToken to your server
+     SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(deviceToken)
 
     // Here you can handle the payload — e.g. show CallKit screen
     // FlutterCallkitIncoming.showCallkitIncoming(...)
@@ -121,6 +124,7 @@ import PushKit
   // 💔 Optional: handle if push fails to register
   func pushRegistry(_ registry: PKPushRegistry,
                     didInvalidatePushTokenFor type: PKPushType) {
-    print("🚫 VoIP push token invalidated")
+       print("didInvalidatePushTokenFor")
+        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP("")
   }
 }
