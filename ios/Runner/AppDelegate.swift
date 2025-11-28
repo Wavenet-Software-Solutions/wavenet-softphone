@@ -4,7 +4,7 @@ import UserNotifications
 import AVFoundation
 import PushKit
 import flutter_local_notifications
-import flutter_callkit_incoming   // 💕 Required for CallKit plugin
+import flutter_callkit_incoming
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, PKPushRegistryDelegate {
@@ -17,7 +17,7 @@ import flutter_callkit_incoming   // 💕 Required for CallKit plugin
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
 
-        // 🌸 Background audio (important for SIP)
+        // iOS audio session
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback,
                                                             mode: .voiceChat,
@@ -27,25 +27,23 @@ import flutter_callkit_incoming   // 💕 Required for CallKit plugin
             print("⚠️ Failed to configure AVAudioSession: \(error)")
         }
 
-        // 🔔 Allow background isolate (flutter_local_notifications)
+        // Local notifications
         FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { registry in
             GeneratedPluginRegistrant.register(with: registry)
         }
 
-        // 📲 PushKit setup
+        // PushKit setup
         voipRegistry = PKPushRegistry(queue: .main)
         voipRegistry?.delegate = self
         voipRegistry?.desiredPushTypes = [.voIP]
 
-        print("📱 PushKit initialized.")
-
         UNUserNotificationCenter.current().delegate = self
-        GeneratedPluginRegistrant.register(with: self)
 
+        GeneratedPluginRegistrant.register(with: self)
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
-    // 🔑 Step 1: APNs gives VoIP token
+    // MARK: - PushKit VoIP Token Received
     func pushRegistry(_ registry: PKPushRegistry,
                       didUpdate pushCredentials: PKPushCredentials,
                       for type: PKPushType) {
@@ -53,11 +51,30 @@ import flutter_callkit_incoming   // 💕 Required for CallKit plugin
         let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
         self.voipToken = token
 
-        print("🔑 VoIP Token: \(token)")
-        UIPasteboard.general.string = token
+        print("📱 VoIP Token: \(token)")
+
+        // Send token to Flutter
+        if let controller = window?.rootViewController as? FlutterViewController {
+            let channel = FlutterMethodChannel(name: "voip_token",
+                                               binaryMessenger: controller.binaryMessenger)
+            channel.invokeMethod("updateVoipToken", arguments: token)
+        }
     }
 
-    // 📞 Step 2: Incoming VoIP push received
+    // MARK: - PushKit Token Invalidated
+    func pushRegistry(_ registry: PKPushRegistry,
+                      didInvalidatePushTokenFor type: PKPushType) {
+
+        print("❌ VoIP Token invalidated")
+
+        if let controller = window?.rootViewController as? FlutterViewController {
+            let channel = FlutterMethodChannel(name: "voip_token",
+                                               binaryMessenger: controller.binaryMessenger)
+            channel.invokeMethod("updateVoipToken", arguments: "")
+        }
+    }
+
+    // MARK: - Incoming VoIP Push Received
     func pushRegistry(_ registry: PKPushRegistry,
                       didReceiveIncomingPushWith payload: PKPushPayload,
                       for type: PKPushType,
@@ -65,44 +82,14 @@ import flutter_callkit_incoming   // 💕 Required for CallKit plugin
 
         print("📩 Incoming VoIP Push Payload: \(payload.dictionaryPayload)")
 
-        // 🌸 Extract caller from payload
-        let caller = (payload.dictionaryPayload["caller"] as? String) ?? "Unknown"
-        let uuid = UUID().uuidString
+        // Forward entire payload to Flutter
+        if let controller = window?.rootViewController as? FlutterViewController {
+            let channel = FlutterMethodChannel(name: "voip_push",
+                                               binaryMessenger: controller.binaryMessenger)
 
-        // 🍎 Tell CallKit plugin about token
-        if let token = voipToken {
-            FlutterCallkitIncomingPlugin.sharedInstance()?.setDevicePushTokenVoIP(token)
-        } else {
-            print("⚠️ VoIP token not available yet.")
+            channel.invokeMethod("incomingVoip", arguments: payload.dictionaryPayload)
         }
 
-        // 🧚 Create params for CallKit popup
-        let params: [String: Any] = [
-            "id": uuid,
-            "nameCaller": caller,
-            "handle": caller,
-            "type": 0,
-            "appName": "Wavenet Softphone",
-            "duration": 30000,
-            "textAccept": "Answer",
-            "textDecline": "Decline",
-            "android": [:],
-            "ios": [
-                "handleType": "generic",
-                "supportsVideo": false
-            ]
-        ]
-
-        // 💖 Show CallKit incoming popup
-        FlutterCallkitIncomingPlugin.sharedInstance()?.showCallkitIncoming(params)
-
         completion()
-    }
-
-    // ❌ Token invalidated
-    func pushRegistry(_ registry: PKPushRegistry,
-                      didInvalidatePushTokenFor type: PKPushType) {
-        print("❌ VoIP token invalidated")
-        FlutterCallkitIncomingPlugin.sharedInstance()?.setDevicePushTokenVoIP("")
     }
 }

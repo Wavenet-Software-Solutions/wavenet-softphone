@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ✅ for MethodChannel
 import 'package:flutter_callkit_incoming/entities/android_params.dart';
 import 'package:flutter_callkit_incoming/entities/call_event.dart';
 import 'package:flutter_callkit_incoming/entities/call_kit_params.dart';
@@ -26,6 +27,9 @@ import 'screens/voicemail_screen.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/background_service.dart';
 
+/// 🔗 Native iOS <-> Flutter channels for VoIP
+const MethodChannel voipTokenChannel = MethodChannel('voip_token');
+const MethodChannel voipPushChannel = MethodChannel('voip_push');
 
 Future<void> _requestAppPermissions() async {
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -50,7 +54,8 @@ Future<void> _requestAppPermissions() async {
   if (iosPlugin != null) {
     await iosPlugin.requestPermissions(alert: true, badge: true, sound: true);
   } else {
-    debugPrint("ℹ️ iOS notification plugin not available (maybe running on Android).");
+    debugPrint(
+        "ℹ️ iOS notification plugin not available (maybe running on Android).");
   }
 
   // 🎙️ Request microphone
@@ -69,6 +74,56 @@ void startCallback() {
   FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
 }
 
+/// 🔐 Wire up native iOS VoIP callbacks (token + incoming push)
+void setupNativeVoipHandlers() {
+  // VoIP token from iOS AppDelegate
+  voipTokenChannel.setMethodCallHandler((call) async {
+    if (call.method == "updateVoipToken") {
+      final token = call.arguments as String?;
+      debugPrint("🔑 VoIP Token from iOS: $token");
+
+      // 👇 Send token to your backend instead of CallKitIncoming
+      // yourServer.sendVoipToken(userId, token)
+    }
+  });
+
+  // Incoming VoIP push forwarded from AppDelegate
+  voipPushChannel.setMethodCallHandler((call) async {
+    if (call.method == "incomingVoip") {
+      final raw = call.arguments as Map<dynamic, dynamic>;
+      final payload =
+      raw.map((key, value) => MapEntry(key.toString(), value));
+
+      debugPrint("📩 Incoming VoIP payload in Dart: $payload");
+
+      final caller = payload['caller']?.toString() ?? 'Unknown';
+
+      final params = CallKitParams(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        nameCaller: caller,
+        handle: caller,
+        type: 0,
+        appName: "Wavenet Softphone",
+        duration: 30000,
+        textAccept: "Answer",
+        textDecline: "Decline",
+
+        android: const AndroidParams(
+          isCustomNotification: false,
+          isShowLogo: false,
+          ringtonePath: "system_ringtone_default",
+          backgroundColor: "#0955fa",
+          actionColor: "#4CAF50",
+          textColor: "#ffffff",
+        ),
+      );
+
+      await FlutterCallkitIncoming.showCallkitIncoming(params);
+    }
+  });
+}
+
+
 Future<void> requestFullScreenIntentPermission() async {
   try {
     final result = await FlutterCallkitIncoming.requestFullIntentPermission();
@@ -80,10 +135,16 @@ Future<void> requestFullScreenIntentPermission() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔗 Hook up native VoIP method channels
+  setupNativeVoipHandlers();
+
+  // Your existing VoIP push manager (keep if you use it)
   VoipPushManager.initialize();
+
   // Initialize service (safe on UI isolate)
   if (Platform.isAndroid) {
-     FlutterForegroundTask.init(
+    FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'wavenet_foreground',
         channelName: 'Wavenet Softphone Background',
@@ -96,15 +157,17 @@ void main() async {
           name: 'launcher',
         ),
       ),
-       iosNotificationOptions: const IOSNotificationOptions( showNotification: false, playSound: false, ),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: false,
+        playSound: false,
+      ),
       foregroundTaskOptions: const ForegroundTaskOptions(
         autoRunOnBoot: true,
         allowWakeLock: true,
         allowWifiLock: true,
       ),
     );
-     FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
-
+    FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
   } else {
     // Optional: log or handle iOS case gracefully
     debugPrint('⚠️ FlutterForegroundTask is not supported on iOS.');
@@ -178,10 +241,10 @@ class _AppShellState extends State<_AppShell>
   @override
   void initState() {
     super.initState();
-     requestFullScreenIntentPermission();
+    requestFullScreenIntentPermission();
     final sip = Provider.of<SipProvider>(context, listen: false);
-    setupCallKitEvents(sip);       // FIX #1
-    bindIncomingCallsToCallKit(sip); // FIX #2
+    setupCallKitEvents(sip); // events from CallKit actions
+    bindIncomingCallsToCallKit(sip); // SIP-triggered incoming calls
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -190,11 +253,11 @@ class _AppShellState extends State<_AppShell>
     _tryAutoLogin();
   }
 
-
   void bindIncomingCallsToCallKit(SipProvider sip) {
     sip.onIncomingCall.listen((call) async {
       final caller = call.remote_identity ?? "Unknown";
-      final uuid = call.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final uuid =
+          call.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
       CallKitParams params = CallKitParams(
         id: uuid,
@@ -205,8 +268,7 @@ class _AppShellState extends State<_AppShell>
         textAccept: 'Answer',
         textDecline: 'Decline',
         duration: 30000,
-
-        android: AndroidParams(
+        android: const AndroidParams(
           isCustomNotification: false,
           isShowLogo: false,
           ringtonePath: 'system_ringtone_default',
@@ -216,8 +278,7 @@ class _AppShellState extends State<_AppShell>
           incomingCallNotificationChannelName: "Incoming Calls",
           missedCallNotificationChannelName: "Missed Calls",
         ),
-
-        missedCallNotification: NotificationParams(
+        missedCallNotification: const NotificationParams(
           showNotification: true,
           isShowCallback: true,
           subtitle: 'Missed Call',
@@ -228,9 +289,6 @@ class _AppShellState extends State<_AppShell>
       await FlutterCallkitIncoming.showCallkitIncoming(params);
     });
   }
-
-
-
 
   Future<void> _tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
@@ -279,7 +337,8 @@ class _AppShellState extends State<_AppShell>
       switch (type) {
         case Event.actionCallAccept:
           sip.answer();
-          navigatorKey.currentState?.pushNamed('/call', arguments: sip.activeCall);
+          navigatorKey.currentState
+              ?.pushNamed('/call', arguments: sip.activeCall);
           break;
 
         case Event.actionCallDecline:
@@ -294,9 +353,6 @@ class _AppShellState extends State<_AppShell>
     });
   }
 
-
-
-
   @override
   void dispose() {
     _controller.dispose();
@@ -309,9 +365,8 @@ class _AppShellState extends State<_AppShell>
 
     debugPrint("📡 SipProvider status: ${sip.status}");
     debugPrint("📞 ActiveCall: ${sip.activeCall}");
-    debugPrint("🎯 Should show floating UI: ${sip.activeCall != null &&
-        (sip.status.contains('oncall') || sip.status.contains('CONFIRMED') ||
-            sip.status.contains('STREAM'))}");
+    debugPrint(
+        "🎯 Should show floating UI: ${sip.activeCall != null && (sip.status.contains('oncall') || sip.status.contains('CONFIRMED') || sip.status.contains('STREAM'))}");
 
     // ⏳ Show loading spinner until auto-login check is done
     if (_checkingLogin) {
@@ -368,8 +423,7 @@ class _AppShellState extends State<_AppShell>
   }
 }
 
-
-  class _BlackHoleClipper extends CustomClipper<Path> {
+class _BlackHoleClipper extends CustomClipper<Path> {
   final double progress;
   _BlackHoleClipper(this.progress);
 
@@ -384,24 +438,6 @@ class _AppShellState extends State<_AppShell>
   bool shouldReclip(covariant _BlackHoleClipper oldClipper) =>
       oldClipper.progress != progress;
 }
-
-
-// // 🌌 Custom clipper for circular "black hole" transition
-// class _BlackHoleClipper extends CustomClipper<Path> {
-//   final double progress;
-//   _BlackHoleClipper(this.progress);
-//
-//   @override
-//   Path getClip(Size size) {
-//     final radius = size.longestSide * progress;
-//     final center = Offset(size.width / 2, size.height / 2);
-//     return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
-//   }
-//
-//   @override
-//   bool shouldReclip(covariant _BlackHoleClipper oldClipper) =>
-//       oldClipper.progress != progress;
-// }
 
 class AnimatedBottomNavBar extends StatefulWidget {
   final int currentIndex;
@@ -499,9 +535,9 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                         Container(
                           width: circleSize,
                           height: circleSize,
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(
+                            gradient: LinearGradient(
                               colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
                             ),
                           ),
@@ -511,7 +547,9 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            active ? item['active'] as IconData : item['icon'] as IconData,
+                            active
+                                ? item['active'] as IconData
+                                : item['icon'] as IconData,
                             color: active ? Colors.tealAccent : Colors.white54,
                             size: 28,
                           ),
@@ -519,7 +557,8 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                           Text(
                             item['label'] as String,
                             style: TextStyle(
-                              color: active ? Colors.tealAccent : Colors.white54,
+                              color:
+                              active ? Colors.tealAccent : Colors.white54,
                               fontSize: 12,
                             ),
                           ),
