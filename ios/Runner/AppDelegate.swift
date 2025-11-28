@@ -105,6 +105,17 @@ import PushKit
     // 💾 TODO: Send token to your backend for PushKit registration
     // Example:
     // MyApiService.registerVoipToken(userId: currentUser.id, token: token)
+
+
+    // Send token to Flutter via MethodChannel
+    if let controller = window?.rootViewController as? FlutterViewController {
+        let channel = FlutterMethodChannel(
+            name: "voip_push_channel",
+            binaryMessenger: controller.binaryMessenger
+        )
+        channel.invokeMethod("onVoipToken", arguments: token)
+    }
+
   }
 
   // 📞 Called when a VoIP push notification arrives
