@@ -87,7 +87,6 @@ class NotificationService {
         if (action == 'MUTE_ACTION') {
           debugPrint("🎙️ Mute toggled");
           await sip.toggleMute();
-          await sip.refreshActiveCallNotification();
         } else if (action == 'HANGUP_ACTION') {
           debugPrint("💔 Hang-up pressed");
           await sip.hangup();

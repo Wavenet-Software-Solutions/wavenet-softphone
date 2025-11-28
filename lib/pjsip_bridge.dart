@@ -22,7 +22,10 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
   final SIPUAHelper _helper = SIPUAHelper();
   final List<SipUaHelperListener> _extraListeners = [];
+  final StreamController<Call> _incomingCallEmitter =
+  StreamController<Call>.broadcast();
 
+  Stream<Call> get onIncomingCall => _incomingCallEmitter.stream;
   Call? activeCall;
   bool registered = false;
   bool muted = false;
@@ -207,6 +210,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
   }
 
   // 📞 Outbound call
+  // 📞 Outbound call (full fix - no camera, no orientation listener)
   Future<void> makeCall(String target) async {
     if (!registered) {
       _setError("📡 Not connected! Please register first.");
@@ -222,8 +226,9 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
     try {
       debugPrint("📞 Calling $target ...");
-      // _helper.call(target, voiceOnly: true);
-      final Map<String, dynamic> mediaConstraints = {
+
+      // ⭐ CRITICAL FIX  — STOP WEBRTC FROM ADDING VIDEO TRACKS
+      final mediaConstraints = {
         'audio': {
           'echoCancellation': true,
           'noiseSuppression': true,
@@ -232,7 +237,7 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
         'video': false,
       };
 
-      final Map<String, dynamic> offerConstraints = {
+      final offerConstraints = {
         'offerToReceiveAudio': true,
         'offerToReceiveVideo': false,
       };
@@ -249,12 +254,14 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       status = 'calling';
       error = null;
       notifyListeners();
+
     } catch (e, s) {
       _setError("❌ Failed to start call: $e");
       debugPrint("Call error: $e\n$s");
     }
   }
-  
+
+
   // 📲 Answer call
   Future<void> answer() async {
     if (activeCall == null) {
@@ -524,23 +531,29 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
     // Shared connection status for all UIs 💫
     String connectionInfo = "Connecting…";
 
-    // 📲 Incoming call
     if (state == CallStateEnum.CALL_INITIATION && direction == 'INCOMING') {
       final caller = call.remote_identity ?? "Unknown Caller";
       debugPrint("📲 Incoming call from $caller");
+
       observeNetworkState(activeCall);
       connectionInfo = "Ringing 📳";
-      await _startRingtone();
+      // await _startRingtone();
       callConnectionInfo.value = connectionInfo;
-      await _showIncomingCallNotification(caller);
+      // await _showIncomingCallNotification(caller);
 
-      navigatorKey.currentState?.pushNamed(
-        '/incoming',
-        arguments: call,
-      );
+      // 🌸 EMIT INCOMING CALL EVENT HERE (This is the fix!)
+      _incomingCallEmitter.add(call);
+
+      // 🌸 Keep your existing Flutter incoming screen
+      // navigatorKey.currentState?.pushNamed(
+      //   '/incoming',
+      //   arguments: call,
+      // );
+
       notifyListeners();
       return;
     }
+
 
     // 🚀 Outgoing call in progress
     if (state == CallStateEnum.PROGRESS && direction == 'OUTGOING') {

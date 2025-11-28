@@ -1,4 +1,3 @@
-// android/app/src/main/kotlin/<your pkg>/MainActivity.kt
 package com.wavenet.softphone
 
 import android.net.ConnectivityManager
@@ -11,18 +10,91 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.net.NetworkInterface
 import java.net.Inet4Address
-
+import android.content.BroadcastReceiver
 
 class MainActivity : FlutterActivity() {
+
     private val CHANNEL = "wavenet/net"
 
+    // --------------------------------------------------------
+    // 🔥 FIX: Handle leaked DeviceOrientationManager receiver
+    // --------------------------------------------------------
+    private fun unregisterWebRtcOrientationReceiver() {
+        val possibleClasses = listOf(
+            "com.cloudwebrtc.webrtc.video.camera.DeviceOrientationManager",
+            "com.cloudwebrtc.webrtc.video.camera.CameraUtils"
+        )
+
+        val possibleFields = listOf("receiver", "broadcastReceiver", "mReceiver")
+
+        for (className in possibleClasses) {
+            try {
+                val clazz = Class.forName(className)
+                for (fieldName in possibleFields) {
+                    try {
+                        val field = clazz.getDeclaredField(fieldName)
+                        field.isAccessible = true
+
+                        val receiver = field.get(null) as? BroadcastReceiver ?: continue
+                        unregisterReceiver(receiver)
+                        field.set(null, null)
+
+                        println("💚 Unregistered WebRTC receiver from $className.$fieldName")
+                        return
+                    } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+
+    override fun onPause() {
+        super.onPause()
+        unregisterWebRtcOrientationReceiver()
+    }
+
+    override fun onDestroy() {
+        try {
+            unregisterWebRtcOrientationReceiver()
+        } catch (_: Exception) {}
+
+        super.onDestroy()
+        unregisterWebRtcOrientationReceiver()
+    }
+
+
+
+    private fun unregisterOrientationReceiverSafe() {
+        try {
+            val clazz = Class.forName("com.cloudwebrtc.webrtc.video.camera.DeviceOrientationManager")
+            val field = clazz.getDeclaredField("receiver")
+            field.isAccessible = true
+            val receiver = field.get(null) as? BroadcastReceiver
+
+            if (receiver != null) {
+                try {
+                    unregisterReceiver(receiver)
+                } catch (_: Exception) {
+                    // ignored: already unregistered
+                }
+            }
+        } catch (_: Exception) {
+            // ignored — field not found or plugin updated
+        }
+    }
+    // --------------------------------------------------------
+
+
+    // --------------------------------------------------------
+    // 🌐 Your original Net Binding API stays untouched
+    // --------------------------------------------------------
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "bindToWifi" -> {
                     val r = bindProcessToExistingWifi()
-                    result.success(r) // returns string like "192.168.1.100" or ""
+                    result.success(r)
                 }
                 else -> result.notImplemented()
             }
@@ -32,12 +104,11 @@ class MainActivity : FlutterActivity() {
     private fun bindProcessToExistingWifi(): String {
         val cm = getSystemService(ConnectivityManager::class.java)
 
-        // Find an already-available Wi-Fi network
         val wifi: Network? = cm.allNetworks.firstOrNull { n ->
-            cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            cm.getNetworkCapabilities(n)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
         } ?: return ""
 
-        // Bind the whole process to Wi-Fi
         val ok = if (Build.VERSION.SDK_INT >= 23) {
             cm.bindProcessToNetwork(wifi)
         } else {
@@ -46,8 +117,6 @@ class MainActivity : FlutterActivity() {
         }
         if (!ok) return ""
 
-        // Optional: verify the bound local IPv4 we’ll use for sockets
-        // (iterate interfaces and pick a 192.168.* / 10.* address on an up interface)
         return try {
             val ips = mutableListOf<String>()
             NetworkInterface.getNetworkInterfaces().toList().forEach { nif ->
@@ -56,10 +125,11 @@ class MainActivity : FlutterActivity() {
                     if (ia is Inet4Address && !ia.isLoopbackAddress) ips.add(ia.hostAddress)
                 }
             }
-            // Prefer RFC1918 local addresses; you can refine this selector if needed
-            ips.firstOrNull { it.startsWith("192.168.") || it.startsWith("10.") || it.startsWith("172.16.") } ?: ""
-        } catch (_: Throwable) {
-            ""
-        }
+            ips.firstOrNull {
+                it.startsWith("192.168.") ||
+                        it.startsWith("10.") ||
+                        it.startsWith("172.16.")
+            } ?: ""
+        } catch (_: Throwable) { "" }
     }
 }

@@ -21,7 +21,7 @@ class _ActiveCallFloatingWidgetState extends State<ActiveCallFloatingWidget> {
     if (call == null) return const SizedBox.shrink();
 
     // 🕐 Format elapsed time
-    final elapsed = sip.callDuration.inSeconds;
+    final elapsed = sip.lastCallDuration.inSeconds;
     final mm = (elapsed ~/ 60).toString().padLeft(2, '0');
     final ss = (elapsed % 60).toString().padLeft(2, '0');
 
