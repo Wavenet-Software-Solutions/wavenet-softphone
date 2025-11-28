@@ -1,130 +1,108 @@
 import UIKit
 import Flutter
 import UserNotifications
-import flutter_local_notifications   // 💡 Needed for background isolate
 import AVFoundation
 import PushKit
+import flutter_local_notifications
+import flutter_callkit_incoming   // 💕 Required for CallKit plugin
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, PKPushRegistryDelegate {
 
-  var voipRegistry: PKPushRegistry?
+    var voipRegistry: PKPushRegistry?
+    var voipToken: String?
 
-  override func application(
-    _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-  ) -> Bool {
+    override func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
 
-    // 🎧 Enable background audio so VoIP sounds can play
-    do {
-      try AVAudioSession.sharedInstance().setCategory(.playback,
-                                                      mode: .default,
-                                                      options: [.mixWithOthers])
-      try AVAudioSession.sharedInstance().setActive(true)
-      print("🎧 AVAudioSession configured for background audio")
-    } catch {
-      print("⚠️ Failed to configure AVAudioSession: \(error)")
+        // 🌸 Background audio (important for SIP)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback,
+                                                            mode: .voiceChat,
+                                                            options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("⚠️ Failed to configure AVAudioSession: \(error)")
+        }
+
+        // 🔔 Allow background isolate (flutter_local_notifications)
+        FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { registry in
+            GeneratedPluginRegistrant.register(with: registry)
+        }
+
+        // 📲 PushKit setup
+        voipRegistry = PKPushRegistry(queue: .main)
+        voipRegistry?.delegate = self
+        voipRegistry?.desiredPushTypes = [.voIP]
+
+        print("📱 PushKit initialized.")
+
+        UNUserNotificationCenter.current().delegate = self
+        GeneratedPluginRegistrant.register(with: self)
+
+        return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
-    // 📲 Initialize PushKit for VoIP notifications
-    voipRegistry = PKPushRegistry(queue: .main)
-    voipRegistry?.delegate = self
-    voipRegistry?.desiredPushTypes = [.voIP]
-    print("📱 PushKit initialized and waiting for token")
+    // 🔑 Step 1: APNs gives VoIP token
+    func pushRegistry(_ registry: PKPushRegistry,
+                      didUpdate pushCredentials: PKPushCredentials,
+                      for type: PKPushType) {
 
-    // 🌸 Allow background isolate for local notifications
-    FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { registry in
-      GeneratedPluginRegistrant.register(with: registry)
+        let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
+        self.voipToken = token
+
+        print("🔑 VoIP Token: \(token)")
+        UIPasteboard.general.string = token
     }
 
-    // 🍏 Allow notifications while app is in foreground
-    UNUserNotificationCenter.current().delegate = self
+    // 📞 Step 2: Incoming VoIP push received
+    func pushRegistry(_ registry: PKPushRegistry,
+                      didReceiveIncomingPushWith payload: PKPushPayload,
+                      for type: PKPushType,
+                      completion: @escaping () -> Void) {
 
-    // 💬 Define iOS notification categories for action buttons
-    let acceptAction = UNNotificationAction(identifier: "ACCEPT",
-                                            title: "✅ Accept",
-                                            options: [.foreground])
-    let declineAction = UNNotificationAction(identifier: "DECLINE",
-                                             title: "❌ Decline",
-                                             options: [.destructive])
-    let incomingCategory = UNNotificationCategory(identifier: "incoming_call",
-                                                  actions: [acceptAction, declineAction],
-                                                  intentIdentifiers: [],
-                                                  options: [])
+        print("📩 Incoming VoIP Push Payload: \(payload.dictionaryPayload)")
 
-    let muteAction = UNNotificationAction(identifier: "MUTE_ACTION",
-                                          title: "Mute/Unmute 🎙️",
-                                          options: [.foreground])
-    let hangupAction = UNNotificationAction(identifier: "HANGUP_ACTION",
-                                            title: "Hang Up 💔",
-                                            options: [.destructive])
-    let activeCategory = UNNotificationCategory(identifier: "active_call",
-                                                actions: [muteAction, hangupAction],
-                                                intentIdentifiers: [],
-                                                options: [])
+        // 🌸 Extract caller from payload
+        let caller = (payload.dictionaryPayload["caller"] as? String) ?? "Unknown"
+        let uuid = UUID().uuidString
 
-    UNUserNotificationCenter.current()
-      .setNotificationCategories([incomingCategory, activeCategory])
+        // 🍎 Tell CallKit plugin about token
+        if let token = voipToken {
+            FlutterCallkitIncomingPlugin.sharedInstance()?.setDevicePushTokenVoIP(token)
+        } else {
+            print("⚠️ VoIP token not available yet.")
+        }
 
-    // ✅ Standard Flutter plugin registration
-    GeneratedPluginRegistrant.register(with: self)
-    return super.application(application,
-                             didFinishLaunchingWithOptions: launchOptions)
-  }
+        // 🧚 Create params for CallKit popup
+        let params: [String: Any] = [
+            "id": uuid,
+            "nameCaller": caller,
+            "handle": caller,
+            "type": 0,
+            "appName": "Wavenet Softphone",
+            "duration": 30000,
+            "textAccept": "Answer",
+            "textDecline": "Decline",
+            "android": [:],
+            "ios": [
+                "handleType": "generic",
+                "supportsVideo": false
+            ]
+        ]
 
-  // 🔑 Called when APNs provides a new VoIP token
-  func pushRegistry(_ registry: PKPushRegistry,
-                    didUpdate pushCredentials: PKPushCredentials,
-                    for type: PKPushType) {
+        // 💖 Show CallKit incoming popup
+        FlutterCallkitIncomingPlugin.sharedInstance()?.showCallkitIncoming(params)
 
-    let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
-    print("🔑 VoIP Token: \(token)")
-
-    // 📋 Copy token to clipboard for quick testing
-    UIPasteboard.general.string = token
-    print("📋 Token copied to clipboard")
-
-    // 💫 Show popup alert with the token (for debugging)
-    DispatchQueue.main.async {
-      let alert = UIAlertController(title: "VoIP Token",
-                                    message: token,
-                                    preferredStyle: .alert)
-      alert.addAction(UIAlertAction(title: "OK", style: .default))
-
-      // ✅ Present alert from the root view controller safely
-      if let rootVC = UIApplication.shared.connectedScenes
-          .compactMap({ $0 as? UIWindowScene })
-          .flatMap({ $0.windows })
-          .first(where: { $0.isKeyWindow })?.rootViewController {
-        rootVC.present(alert, animated: true)
-      } else {
-        print("⚠️ Could not find rootViewController to present token alert.")
-      }
+        completion()
     }
 
-    // 💾 TODO: Send token to your backend for PushKit registration
-    // Example:
-    // MyApiService.registerVoipToken(userId: currentUser.id, token: token)
-  }
-
-  // 📞 Called when a VoIP push notification arrives
-  func pushRegistry(_ registry: PKPushRegistry,
-                    didReceiveIncomingPushWith payload: PKPushPayload,
-                    for type: PKPushType) {
-
-     print(credentials.token)
-     let deviceToken = credentials.token.map { String(format: "%02x", $0) }.joined()
-     // Save deviceToken to your server
-     SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(deviceToken)
-
-    // Here you can handle the payload — e.g. show CallKit screen
-    // FlutterCallkitIncoming.showCallkitIncoming(...)
-  }
-
-  // 💔 Optional: handle if push fails to register
-  func pushRegistry(_ registry: PKPushRegistry,
-                    didInvalidatePushTokenFor type: PKPushType) {
-       print("didInvalidatePushTokenFor")
-        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP("")
-  }
+    // ❌ Token invalidated
+    func pushRegistry(_ registry: PKPushRegistry,
+                      didInvalidatePushTokenFor type: PKPushType) {
+        print("❌ VoIP token invalidated")
+        FlutterCallkitIncomingPlugin.sharedInstance()?.setDevicePushTokenVoIP("")
+    }
 }
