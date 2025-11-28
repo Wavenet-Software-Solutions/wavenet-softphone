@@ -58,46 +58,49 @@ import flutter_callkit_incoming   // 💕 Required for CallKit plugin
     }
 
     // 📞 Step 2: Incoming VoIP push received
-    func pushRegistry(_ registry: PKPushRegistry,
-                      didReceiveIncomingPushWith payload: PKPushPayload,
-                      for type: PKPushType,
-                      completion: @escaping () -> Void) {
+ func pushRegistry(_ registry: PKPushRegistry,
+                   didReceiveIncomingPushWith payload: PKPushPayload,
+                   for type: PKPushType,
+                   completion: @escaping () -> Void) {
 
-        print("📩 Incoming VoIP Push Payload: \(payload.dictionaryPayload)")
+     print("📩 Incoming VoIP Push Payload: \(payload.dictionaryPayload)")
 
-        // 🌸 Extract caller from payload
-        let caller = (payload.dictionaryPayload["caller"] as? String) ?? "Unknown"
-        let uuid = UUID().uuidString
+     // Extract safe values
+     let payloadDict = payload.dictionaryPayload
+     let caller = payloadDict["caller"] as? String ?? "Unknown"
+     let handle = payloadDict["handle"] as? String ?? caller
+     let uuid = (payloadDict["uuid"] as? String) ?? UUID().uuidString
 
-        // 🍎 Tell CallKit plugin about token
-        if let token = voipToken {
-            FlutterCallkitIncomingPlugin.sharedInstance()?.setDevicePushTokenVoIP(token)
-        } else {
-            print("⚠️ VoIP token not available yet.")
-        }
+     // Register token inside plugin (important)
+     if let token = voipToken {
+         SwiftFlutterCallkitIncomingPlugin.sharedInstance?
+             .setDevicePushTokenVoIP(token)
+     }
 
-        // 🧚 Create params for CallKit popup
-        let params: [String: Any] = [
-            "id": uuid,
-            "nameCaller": caller,
-            "handle": caller,
-            "type": 0,
-            "appName": "Wavenet Softphone",
-            "duration": 30000,
-            "textAccept": "Answer",
-            "textDecline": "Decline",
-            "android": [:],
-            "ios": [
-                "handleType": "generic",
-                "supportsVideo": false
-            ]
-        ]
+     // CallKit configuration (100% safe)
+     let params: [String: Any] = [
+         "id": uuid,                          // REQUIRED
+         "nameCaller": caller,
+         "handle": handle,
+         "type": 0,
+         "appName": "Wavenet Softphone",
+         "duration": 30000,
+         "textAccept": "Answer",
+         "textDecline": "Decline",
+         "extra": payloadDict,                // pass whole push if needed
+         "ios": [
+             "handleType": "generic",
+             "supportsVideo": false
+         ]
+     ]
 
-        // 💖 Show CallKit incoming popup
-        FlutterCallkitIncomingPlugin.sharedInstance()?.showCallkitIncoming(params)
+     // 💖 THE FIX — use PushKit mode!
+     SwiftFlutterCallkitIncomingPlugin.sharedInstance?
+         .showCallkitIncoming(params, fromPushKit: true)
 
-        completion()
-    }
+     completion()
+ }
+
 
     // ❌ Token invalidated
     func pushRegistry(_ registry: PKPushRegistry,
