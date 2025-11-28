@@ -8,6 +8,7 @@ import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wavenetsoftphone/services/voip_push_service.dart';
 import 'package:wavenetsoftphone/widgets/active_call_floating_widget.dart';
 import 'pjsip_bridge.dart';
 import 'screens/login_screen.dart';
@@ -79,6 +80,7 @@ Future<void> requestFullScreenIntentPermission() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  VoipPushManager.initialize();
   // Initialize service (safe on UI isolate)
   if (Platform.isAndroid) {
      FlutterForegroundTask.init(
