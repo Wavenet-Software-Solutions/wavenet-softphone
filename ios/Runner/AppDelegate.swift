@@ -1,91 +1,92 @@
 import UIKit
-import Flutter
+import CallKit
+import AVFAudio
 import PushKit
-import AVFoundation
-import UserNotifications
+import Flutter
+import flutter_callkit_incoming
 
-@main
-@objc class AppDelegate: FlutterAppDelegate, PKPushRegistryDelegate {
-
-    var voipRegistry: PKPushRegistry?
-    var voipToken: String?
+@UIApplicationMain
+@objc class AppDelegate: FlutterAppDelegate, PKPushRegistryDelegate, CallkitIncomingAppDelegate {
 
     override func application(
         _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
 
-        try? AVAudioSession.sharedInstance().setCategory(.playback,
-                                                         mode: .voiceChat,
-                                                         options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
-
-        // PushKit
-        voipRegistry = PKPushRegistry(queue: .main)
-        voipRegistry?.delegate = self
-        voipRegistry?.desiredPushTypes = [.voIP]
-
-        UNUserNotificationCenter.current().delegate = self
-
+        // Register Flutter plugins
         GeneratedPluginRegistrant.register(with: self)
+
+        // Setup PushKit for VoIP
+        let mainQueue = DispatchQueue.main
+        let voipRegistry = PKPushRegistry(queue: mainQueue)
+        voipRegistry.delegate = self
+        voipRegistry.desiredPushTypes = [.voIP]
+
+        // Enable missed call notifications
+        if #available(iOS 10.0, *) {
+            UNUserNotificationCenter.current().delegate = self
+        }
+
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
-    // MARK: - Token
-    func pushRegistry(_ registry: PKPushRegistry,
-                      didUpdate pushCredentials: PKPushCredentials,
-                      for type: PKPushType) {
-        let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
-        voipToken = token
-        print("🔑 VoIP Token:", token)
-        UIPasteboard.general.string = token
+    // MARK: - VoIP Token
+    func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
+        let deviceToken = credentials.token.map { String(format: "%02x", $0) }.joined()
+        print("VoIP Token:", deviceToken)
+        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(deviceToken)
     }
 
-    // MARK: - REQUIRED HANDLER #1 (iOS 13–18)
+    func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
+        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP("")
+    }
+
+    // MARK: - Incoming VoIP Push
     func pushRegistry(_ registry: PKPushRegistry,
                       didReceiveIncomingPushWith payload: PKPushPayload,
                       for type: PKPushType,
                       completion: @escaping () -> Void) {
 
-        handleVoipPush(payload)
-        completion()  // 💖 REQUIRED or iOS crashes app
-    }
+        guard type == .voIP else { return }
 
-    // MARK: - REQUIRED HANDLER #2 (legacy)
-    func pushRegistry(_ registry: PKPushRegistry,
-                      didReceiveIncomingPushWith payload: PKPushPayload,
-                      for type: PKPushType) {
+        let id = payload.dictionaryPayload["id"] as? String ?? UUID().uuidString
+        let name = payload.dictionaryPayload["nameCaller"] as? String ?? "Unknown"
+        let handle = payload.dictionaryPayload["handle"] as? String ?? "Unknown"
+        let isVideo = payload.dictionaryPayload["isVideo"] as? Bool ?? false
 
-        handleVoipPush(payload)
-    }
+        // Create CallKit data object
+        let data = flutter_callkit_incoming.Data(
+            id: id,
+            nameCaller: name,
+            handle: handle,
+            type: isVideo ? 1 : 0
+        )
 
-    // MARK: - Shared handler
-    private func handleVoipPush(_ payload: PKPushPayload) {
-        print("📩 Incoming VoIP Payload:", payload.dictionaryPayload)
+        data.extra = payload.dictionaryPayload
 
-        let caller = payload.dictionaryPayload["caller"] as? String ?? "Unknown"
-        let uuid = UUID().uuidString
-
-        let params: [String: Any] = [
-            "id": uuid,
-            "nameCaller": caller,
-            "handle": caller,
-            "type": 0,
-            "appName": "Wavenet Softphone",
-            "duration": 30000,
-            "extra": payload.dictionaryPayload,
-            "ios": [
-                "handleType": "generic",
-                "supportsVideo": false
-            ]
-        ]
-
-        if let controller = window?.rootViewController as? FlutterViewController {
-            let channel = FlutterMethodChannel(
-                name: "flutter_callkit_incoming",
-                binaryMessenger: controller.binaryMessenger
-            )
-            channel.invokeMethod("showCallkitIncoming", arguments: params)
+        // Show CallKit incoming UI
+        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
+            completion()
         }
+    }
+
+    // MARK: - Call Actions
+    func onAccept(_ call: Call, _ action: CXAnswerCallAction) {
+        print("Accept call")
+        action.fulfill()
+    }
+
+    func onDecline(_ call: Call, _ action: CXEndCallAction) {
+        print("Decline call")
+        action.fulfill()
+    }
+
+    func onEnd(_ call: Call, _ action: CXEndCallAction) {
+        print("End call")
+        action.fulfill()
+    }
+
+    func onTimeOut(_ call: Call) {
+        print("Call timeout")
     }
 }
