@@ -20,7 +20,6 @@ import flutter_callkit_incoming
         voipRegistry.delegate = self
         voipRegistry.desiredPushTypes = [.voIP]
 
-        // Enable notifications for missed calls
         if #available(iOS 10.0, *) {
             UNUserNotificationCenter.current().delegate = self
         }
@@ -28,7 +27,7 @@ import flutter_callkit_incoming
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
-    // MARK: - VoIP Token Update
+    // MARK: - VoIP Token
     func pushRegistry(_ registry: PKPushRegistry,
                       didUpdate credentials: PKPushCredentials,
                       for type: PKPushType) {
@@ -52,11 +51,11 @@ import flutter_callkit_incoming
 
         guard type == .voIP else { return }
 
-        print("📩 Incoming push payload:", payload.dictionaryPayload)
+        print("📩 Incoming payload:", payload.dictionaryPayload)
 
         let id = payload.dictionaryPayload["id"] as? String ?? UUID().uuidString
         let name = payload.dictionaryPayload["nameCaller"] as? String ?? "Unknown"
-        let handle = payload.dictionaryPayload["handle"] as? String ?? "Unknown"
+        let handle = payload.dictionaryPayload["handle"] as? String ?? name
         let isVideo = payload.dictionaryPayload["isVideo"] as? Bool ?? false
 
         let data = flutter_callkit_incoming.Data(
@@ -66,7 +65,6 @@ import flutter_callkit_incoming
             type: isVideo ? 1 : 0
         )
 
-        // FIXED: Cast to NSDictionary
         data.extra = payload.dictionaryPayload as NSDictionary
 
         SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(
@@ -77,7 +75,7 @@ import flutter_callkit_incoming
         }
     }
 
-    // MARK: - Call Actions (REQUIRED)
+    // MARK: - REQUIRED PROTOCOL METHODS
     func onAccept(_ call: Call, _ action: CXAnswerCallAction) {
         print("☎️ Accept")
         action.fulfill()
@@ -95,5 +93,13 @@ import flutter_callkit_incoming
 
     func onTimeOut(_ call: Call) {
         print("⌛ Timeout")
+    }
+
+    func didActivateAudioSession(_ audioSession: AVAudioSession) {
+        print("🔊 Audio session activated")
+    }
+
+    func didDeactivateAudioSession(_ audioSession: AVAudioSession) {
+        print("🔇 Audio session deactivated")
     }
 }
