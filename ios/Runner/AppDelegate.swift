@@ -10,19 +10,17 @@ import flutter_callkit_incoming
 
     override func application(
         _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
     ) -> Bool {
 
-        // Register Flutter plugins
         GeneratedPluginRegistrant.register(with: self)
 
-        // Setup PushKit for VoIP
-        let mainQueue = DispatchQueue.main
-        let voipRegistry = PKPushRegistry(queue: mainQueue)
+        // Setup PushKit
+        let voipRegistry = PKPushRegistry(queue: .main)
         voipRegistry.delegate = self
         voipRegistry.desiredPushTypes = [.voIP]
 
-        // Enable missed call notifications
+        // Enable notifications for missed calls
         if #available(iOS 10.0, *) {
             UNUserNotificationCenter.current().delegate = self
         }
@@ -30,14 +28,19 @@ import flutter_callkit_incoming
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
-    // MARK: - VoIP Token
-    func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
+    // MARK: - VoIP Token Update
+    func pushRegistry(_ registry: PKPushRegistry,
+                      didUpdate credentials: PKPushCredentials,
+                      for type: PKPushType) {
+
         let deviceToken = credentials.token.map { String(format: "%02x", $0) }.joined()
         print("VoIP Token:", deviceToken)
+
         SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(deviceToken)
     }
 
-    func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
+    func pushRegistry(_ registry: PKPushRegistry,
+                      didInvalidatePushTokenFor type: PKPushType) {
         SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP("")
     }
 
@@ -49,12 +52,13 @@ import flutter_callkit_incoming
 
         guard type == .voIP else { return }
 
+        print("📩 Incoming push payload:", payload.dictionaryPayload)
+
         let id = payload.dictionaryPayload["id"] as? String ?? UUID().uuidString
         let name = payload.dictionaryPayload["nameCaller"] as? String ?? "Unknown"
         let handle = payload.dictionaryPayload["handle"] as? String ?? "Unknown"
         let isVideo = payload.dictionaryPayload["isVideo"] as? Bool ?? false
 
-        // Create CallKit data object
         let data = flutter_callkit_incoming.Data(
             id: id,
             nameCaller: name,
@@ -62,31 +66,34 @@ import flutter_callkit_incoming
             type: isVideo ? 1 : 0
         )
 
-        data.extra = payload.dictionaryPayload
+        // FIXED: Cast to NSDictionary
+        data.extra = payload.dictionaryPayload as NSDictionary
 
-        // Show CallKit incoming UI
-        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
+        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(
+            data,
+            fromPushKit: true
+        ) {
             completion()
         }
     }
 
-    // MARK: - Call Actions
+    // MARK: - Call Actions (REQUIRED)
     func onAccept(_ call: Call, _ action: CXAnswerCallAction) {
-        print("Accept call")
+        print("☎️ Accept")
         action.fulfill()
     }
 
     func onDecline(_ call: Call, _ action: CXEndCallAction) {
-        print("Decline call")
+        print("❌ Decline")
         action.fulfill()
     }
 
     func onEnd(_ call: Call, _ action: CXEndCallAction) {
-        print("End call")
+        print("🔚 End")
         action.fulfill()
     }
 
     func onTimeOut(_ call: Call) {
-        print("Call timeout")
+        print("⌛ Timeout")
     }
 }
