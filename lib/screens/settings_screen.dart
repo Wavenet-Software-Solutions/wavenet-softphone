@@ -221,39 +221,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: ListTile(
-                leading: const Icon(Icons.logout, color: Colors.redAccent),
-                title: const Text('Logout',
-                    style: TextStyle(color: Colors.white, fontSize: 16)),
-                trailing: const Icon(Icons.arrow_forward_ios,
-                    color: Colors.white38, size: 16),
-                onTap: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: const Color(0xFF1e2a38),
-                      title: const Text('Logout',
-                          style: TextStyle(color: Colors.white)),
-                      content: const Text(
-                        'Are you sure you want to log out?',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancel',
-                              style: TextStyle(color: Colors.white70)),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Logout',
-                              style: TextStyle(color: Colors.redAccent)),
-                        ),
-                      ],
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.account_circle,
+                        color: Colors.tealAccent),
+                    title: const Text(
+                      'SIP Account',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
-                  );
-                  if (confirm == true) await _logout(context);
-                },
+                    subtitle: const Text(
+                      'Account details & connection status',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios,
+                        color: Colors.white38, size: 16),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/sip-account');
+                    },
+                  ),
+                  const Divider(color: Colors.white12, height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.redAccent),
+                    title: const Text(
+                      'Logout',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios,
+                        color: Colors.white38, size: 16),
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: const Color(0xFF1e2a38),
+                          title: const Text('Logout',
+                              style: TextStyle(color: Colors.white)),
+                          content: const Text(
+                            'Are you sure you want to log out?',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel',
+                                  style: TextStyle(color: Colors.white70)),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Logout',
+                                  style: TextStyle(color: Colors.redAccent)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) await _logout(context);
+                    },
+                  ),
+                ],
               ),
             ),
             const Spacer(),

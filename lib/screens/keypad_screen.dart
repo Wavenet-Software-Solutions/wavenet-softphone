@@ -123,6 +123,7 @@ class _KeypadScreenState extends State<KeypadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Container(
         // 🌌 Beautiful dark gradient background
         decoration: const BoxDecoration(

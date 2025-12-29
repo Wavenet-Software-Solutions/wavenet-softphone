@@ -90,6 +90,37 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       debugPrint("⚠️ Failed to stop ringtone: $e");
     }
   }
+  Future<void> reRegister() async {
+    try {
+      if(_helper.registered){
+         _helper.unregister(true);
+      }
+      final prefs = await SharedPreferences.getInstance();
+
+      final user = prefs.getString('username');
+      final pass = prefs.getString('password');
+      final host = prefs.getString('host');
+
+      if (user == null || pass == null || host == null) {
+        debugPrint("⚠️ No saved SIP credentials — cannot re-register");
+        return;
+      }
+
+      // allow re-registration
+      registered = false;
+      connecting = false;
+
+      await register(
+        user,
+        pass,
+        host,
+        startForeground: false,
+      );
+    } catch (e, s) {
+      debugPrint("❌ Failed to re-register SIP: $e\n$s");
+    }
+  }
+
 
 
   Future<void> _showActiveCallNotification(String target, {bool muted = false}) async {
@@ -133,7 +164,12 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
 
 
   // 🚀 Register user
-  Future<void> register(String username, String password, String domain) async {
+  Future<void> register(
+      String username,
+      String password,
+      String domain, {
+        bool startForeground = true,
+      }) async {
     if (connecting || registered) {
       debugPrint("⚠️ Already connecting or registered — skipping.");
       return;
@@ -176,13 +212,9 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       _helper.start(settings);
       status = 'registering';
 
-      if (Platform.isAndroid) {
-        await FlutterForegroundTask.startService(
-          notificationTitle: 'Wavenet Softphone Running',
-          notificationText: 'Listening for incoming calls…',
-          callback: startCallback, // 💫 background handler
-        );
-      }
+if(startForeground){
+  startForegroundTask();
+}
 
       debugPrint("🚀 Foreground service started to keep WebSocket alive.");
       error = null;
@@ -193,6 +225,16 @@ class SipProvider extends ChangeNotifier with WidgetsBindingObserver  implements
       notifyListeners();
     }
 
+  }
+
+  Future<void> startForegroundTask() async {
+    if (Platform.isAndroid) {
+      await FlutterForegroundTask.startService(
+        notificationTitle: 'Wavenet Softphone Running',
+        notificationText: 'Listening for incoming calls…',
+        callback: startCallback, // 💫 background handler
+      );
+    }
   }
 
 

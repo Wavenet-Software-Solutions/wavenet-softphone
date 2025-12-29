@@ -1,0 +1,4 @@
+BACKEND_URL=http://localhost:3035/api/voip-token/save
+PHONE_TYPE=iOS
+EXTENSION=agent1
+UUID=1f3a5c77-92ab-4ff0-b81a-fb8882a5d0e1

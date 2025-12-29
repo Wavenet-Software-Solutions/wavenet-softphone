@@ -9,6 +9,7 @@ import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wavenetsoftphone/screens/sip_account_screen.dart';
 import 'package:wavenetsoftphone/services/voip_push_service.dart';
 import 'package:wavenetsoftphone/widgets/active_call_floating_widget.dart';
 import 'pjsip_bridge.dart';
@@ -26,6 +27,7 @@ import 'screens/recent_call_screen.dart';
 import 'screens/voicemail_screen.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/background_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// 🔗 Native iOS <-> Flutter channels for VoIP
 const MethodChannel voipTokenChannel = MethodChannel('voip_token');
@@ -50,12 +52,14 @@ Future<void> _requestAppPermissions() async {
   // 🍎 Request iOS notification permissions safely
   final iosPlugin = flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-      IOSFlutterLocalNotificationsPlugin>();
+        IOSFlutterLocalNotificationsPlugin
+      >();
   if (iosPlugin != null) {
     await iosPlugin.requestPermissions(alert: true, badge: true, sound: true);
   } else {
     debugPrint(
-        "ℹ️ iOS notification plugin not available (maybe running on Android).");
+      "ℹ️ iOS notification plugin not available (maybe running on Android).",
+    );
   }
 
   // 🎙️ Request microphone
@@ -91,8 +95,7 @@ void setupNativeVoipHandlers() {
   voipPushChannel.setMethodCallHandler((call) async {
     if (call.method == "incomingVoip") {
       final raw = call.arguments as Map<dynamic, dynamic>;
-      final payload =
-      raw.map((key, value) => MapEntry(key.toString(), value));
+      final payload = raw.map((key, value) => MapEntry(key.toString(), value));
 
       debugPrint("📩 Incoming VoIP payload in Dart: $payload");
 
@@ -123,7 +126,6 @@ void setupNativeVoipHandlers() {
   });
 }
 
-
 Future<void> requestFullScreenIntentPermission() async {
   try {
     final result = await FlutterCallkitIncoming.requestFullIntentPermission();
@@ -135,14 +137,20 @@ Future<void> requestFullScreenIntentPermission() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: "env");
 
-  // 🔗 Hook up native VoIP method channels
+  // 💫 Initialize native VoIP channel
   setupNativeVoipHandlers();
-
-  // Your existing VoIP push manager (keep if you use it)
   VoipPushManager.initialize();
 
-  // Initialize service (safe on UI isolate)
+  // 💾 Check if user has stored SIP credentials
+  final prefs = await SharedPreferences.getInstance();
+  final hasSavedCredentials =
+      prefs.containsKey('username') &&
+      prefs.containsKey('password') &&
+      prefs.containsKey('host');
+
+  // 🚀 Initialize background service only on Android
   if (Platform.isAndroid) {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -151,7 +159,7 @@ void main() async {
         channelDescription: 'Keeps SIP running for incoming calls',
         channelImportance: NotificationChannelImportance.HIGH,
         priority: NotificationPriority.HIGH,
-        iconData: NotificationIconData(
+        iconData: const NotificationIconData(
           resType: ResourceType.mipmap,
           resPrefix: ResourcePrefix.ic,
           name: 'launcher',
@@ -169,13 +177,25 @@ void main() async {
     );
     FlutterForegroundTask.setTaskHandler(WavenetForegroundHandler());
   } else {
-    // Optional: log or handle iOS case gracefully
     debugPrint('⚠️ FlutterForegroundTask is not supported on iOS.');
   }
 
-  // Register background handler
+  // 🧠 Initialize SIP provider
   final sipProvider = SipProvider()..init();
+
+  // 🎙️ Ask for permissions (mic, notifications, etc.)
   await _requestAppPermissions();
+
+  // 🧩 If user credentials exist, push VoIP token to backend
+  if (hasSavedCredentials) {
+    debugPrint("📡 Found saved SIP credentials — syncing VoIP token...");
+    await VoipPushManager.sendSavedTokenToBackend();
+  } else {
+    debugPrint(
+      "🕐 No saved SIP credentials — skipping VoIP token registration.",
+    );
+  }
+
   runApp(
     ChangeNotifierProvider.value(
       value: sipProvider,
@@ -209,6 +229,7 @@ class SoftphoneApp extends StatelessWidget {
           return IncomingCallScreen(call: call);
         },
         '/recent': (_) => const RecentCallsScreen(),
+        '/sip-account': (_) => const SipAccountScreen(),
       },
     );
   }
@@ -256,8 +277,7 @@ class _AppShellState extends State<_AppShell>
   void bindIncomingCallsToCallKit(SipProvider sip) {
     sip.onIncomingCall.listen((call) async {
       final caller = call.remote_identity ?? "Unknown";
-      final uuid =
-          call.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final uuid = call.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
       CallKitParams params = CallKitParams(
         id: uuid,
@@ -337,8 +357,10 @@ class _AppShellState extends State<_AppShell>
       switch (type) {
         case Event.actionCallAccept:
           sip.answer();
-          navigatorKey.currentState
-              ?.pushNamed('/call', arguments: sip.activeCall);
+          navigatorKey.currentState?.pushNamed(
+            '/call',
+            arguments: sip.activeCall,
+          );
           break;
 
         case Event.actionCallDecline:
@@ -366,14 +388,13 @@ class _AppShellState extends State<_AppShell>
     debugPrint("📡 SipProvider status: ${sip.status}");
     debugPrint("📞 ActiveCall: ${sip.activeCall}");
     debugPrint(
-        "🎯 Should show floating UI: ${sip.activeCall != null && (sip.status.contains('oncall') || sip.status.contains('CONFIRMED') || sip.status.contains('STREAM'))}");
+      "🎯 Should show floating UI: ${sip.activeCall != null && (sip.status.contains('oncall') || sip.status.contains('CONFIRMED') || sip.status.contains('STREAM'))}",
+    );
 
     // ⏳ Show loading spinner until auto-login check is done
     if (_checkingLogin) {
       debugPrint("⏳ Still checking login...");
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // 🔐 Not logged in? → Go to login screen
@@ -392,10 +413,7 @@ class _AppShellState extends State<_AppShell>
             builder: (context, child) {
               return ClipPath(
                 clipper: _BlackHoleClipper(_animation.value),
-                child: IndexedStack(
-                  index: _selectedIndex,
-                  children: _pages,
-                ),
+                child: IndexedStack(index: _selectedIndex, children: _pages),
               );
             },
           ),
@@ -413,9 +431,7 @@ class _AppShellState extends State<_AppShell>
           const Positioned.fill(
             child: IgnorePointer(
               ignoring: false,
-              child: Stack(
-                children: [ActiveCallFloatingWidget()],
-              ),
+              child: Stack(children: [ActiveCallFloatingWidget()]),
             ),
           ),
       ],
@@ -489,10 +505,26 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
   @override
   Widget build(BuildContext context) {
     final items = const [
-      {'icon': Icons.dialpad_outlined, 'active': Icons.dialpad, 'label': 'Keypad'},
-      {'icon': Icons.history, 'active': Icons.history_toggle_off, 'label': 'Recent'},
-      {'icon': Icons.voicemail_outlined, 'active': Icons.voicemail, 'label': 'Voicemail'},
-      {'icon': Icons.settings_outlined, 'active': Icons.settings, 'label': 'Settings'},
+      {
+        'icon': Icons.dialpad_outlined,
+        'active': Icons.dialpad,
+        'label': 'Keypad',
+      },
+      {
+        'icon': Icons.history,
+        'active': Icons.history_toggle_off,
+        'label': 'Recent',
+      },
+      {
+        'icon': Icons.voicemail_outlined,
+        'active': Icons.voicemail,
+        'label': 'Voicemail',
+      },
+      {
+        'icon': Icons.settings_outlined,
+        'active': Icons.settings,
+        'label': 'Settings',
+      },
       {'icon': Icons.info_outline, 'active': Icons.info, 'label': 'About'},
     ];
 
@@ -525,7 +557,7 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                 animation: _animation,
                 builder: (context, child) {
                   final isTapped = _tappedIndex == index;
-                  final circleSize = isTapped ? 80 * _animation.value : 0.0;
+                  final circleSize = isTapped ? 60 * _animation.value : 0.0;
 
                   return Stack(
                     alignment: Alignment.center,
@@ -551,15 +583,16 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                                 ? item['active'] as IconData
                                 : item['icon'] as IconData,
                             color: active ? Colors.tealAccent : Colors.white54,
-                            size: 28,
+                            size: 20,
                           ),
                           const SizedBox(height: 4),
                           Text(
                             item['label'] as String,
                             style: TextStyle(
-                              color:
-                              active ? Colors.tealAccent : Colors.white54,
-                              fontSize: 12,
+                              color: active
+                                  ? Colors.tealAccent
+                                  : Colors.white54,
+                              fontSize: 10,
                             ),
                           ),
                         ],
